@@ -1,5 +1,6 @@
 # Phase 0 compatibility matrix: Python API gates
 
+<!-- markdownlint-disable MD013 -->
 Status: Phase 0 contract. No runtime implementation is authorized by this artifact.
 
 This matrix defines the Python API compatibility gates for the Prisma 7 JS/TS
@@ -44,7 +45,7 @@ must not require application code to call JavaScript directly.
 | Interactive transactions | Preserve source compatibility if implemented; otherwise document as deferred with explicit runtime error in JS bridge mode. | Partial | Either parity tests pass or unsupported path raises a specific Python exception with migration guidance. | Silent fallback, hanging transaction, or nested transaction behavior differs without documentation. |
 | Nested transactions | No implicit nested interactive transaction support unless the transaction contract defines it. | Deferred | Nested attempts fail deterministically with documented exception, or pass explicit semantics tests if implemented later. | Deadlock, ambiguous commit/rollback, or untracked inner transaction IDs. |
 | Error classes | Existing Python exception classes remain the primary public surface; Prisma `code`, `meta`, and retryability may be attached. | Supported | Error mapping fixtures prove validation, known request, initialization, panic/process death, timeout, and cancellation mappings. | JS stack/error objects leak as untyped strings or established Python exception handlers stop working. |
-| Feature flag/default policy | Development flag is `PRISMA_PY_ENGINE=js-bridge|rust-legacy`; initial default is legacy/explicit opt-in until parity gates pass. | Supported | Tests prove default selection, opt-in selection, invalid flag diagnostics, and no Rust engine spawn in JS bridge mode. | JS bridge becomes default before gates pass or unsupported configs silently choose it. |
+| Feature flag/default policy | Development flag is `PRISMA_PY_ENGINE=js-bridge\|rust-legacy`; initial default is legacy/explicit opt-in until parity gates pass. | Supported | Tests prove default selection, opt-in selection, invalid flag diagnostics, and no Rust engine spawn in JS bridge mode. | JS bridge becomes default before gates pass or unsupported configs silently choose it. |
 | Configuration/datasource overrides | Existing Python-side config behavior is preserved where it does not conflict with Prisma 7 `prisma.config.ts` datasource handling. | Partial | Supported override paths are documented and tested per provider. | Python config appears accepted but bridge uses a different datasource. |
 | Logging/debug hooks | Python logging hooks remain usable; Node stderr can be captured/forwarded without stdout protocol corruption. | Supported | Tests assert stdout contains only JSON protocol frames and stderr/log side channel carries diagnostics. | Logs interleave with JSON responses on stdout. |
 | Metrics/tracing | Existing metrics APIs are not required for first JS bridge opt-in unless they already gate release behavior. | Deferred | Unsupported metrics paths fail clearly or are documented as legacy-only. | Metrics silently report legacy engine values while JS bridge is active. |

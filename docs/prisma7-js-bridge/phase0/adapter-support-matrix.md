@@ -1,5 +1,6 @@
 # Phase 0 adapter support matrix
 
+<!-- markdownlint-disable MD013 -->
 Status: Phase 0 contract. No runtime implementation is authorized by this artifact.
 
 The Prisma 7 JS bridge must instantiate generated Prisma JS/TS Client with a
