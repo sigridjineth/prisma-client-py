@@ -48,7 +48,7 @@ The worker did not mutate `.omx/ultragoal`; that path remains leader-owned.
 - stdout from the Node bridge is protocol-only; diagnostic logs go to stderr or a later structured side channel.
 - The default Prisma 7 path must not rely on Rust query-engine binaries or removed Prisma 7 engine environment variables.
 - Node is a runtime dependency for Prisma 7 bridge mode.
-- SQLite is the first implementation target; networked databases require explicit adapter gates.
+- Self-hosted PostgreSQL is the first and only initial implementation target; SQLite, MySQL/MariaDB, and other providers are deferred until separate adapter gates pass.
 - MongoDB and removed metrics behavior are not part of the initial Prisma 7 default claim.
 - Existing Python import paths, CRUD signatures, model hydration, context-manager behavior, and exception classes are compatibility gates before the JS bridge becomes the default.
 

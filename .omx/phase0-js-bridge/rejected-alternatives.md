@@ -83,7 +83,7 @@ Decision: Deferred.
 Rationale:
 
 - Requires external service/network semantics beyond a local stdio bridge.
-- Does not solve local SQLite first-slice and Python compatibility gates.
+- Does not solve the self-hosted PostgreSQL first-slice and Python compatibility gates.
 
 ### Full Rust legacy removal in Phase 0
 

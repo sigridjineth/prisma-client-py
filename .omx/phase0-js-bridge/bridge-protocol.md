@@ -86,8 +86,8 @@ Success:
   "meta": {
     "protocolVersion": "2026-05-26.phase0.v1",
     "elapsedMs": 12,
-    "provider": "sqlite",
-    "adapter": "@prisma/adapter-better-sqlite3"
+    "provider": "postgresql",
+    "adapter": "@prisma/adapter-pg"
   }
 }
 ```
@@ -132,8 +132,8 @@ Node emits this stdout notification after loading configuration, importing the g
   "params": {
     "protocolVersion": "2026-05-26.phase0.v1",
     "pid": 12345,
-    "provider": "sqlite",
-    "adapter": "@prisma/adapter-better-sqlite3",
+    "provider": "postgresql",
+    "adapter": "@prisma/adapter-pg",
     "prismaClientVersion": "7.8.0"
   }
 }
@@ -161,7 +161,7 @@ Result:
 }
 ```
 
-`requireDatabase=true` should verify that the Prisma client can reach the configured database. The SQLite Phase 1 smoke test must cover both false and true.
+`requireDatabase=true` should verify that the Prisma client can reach the configured database. The PostgreSQL Phase 1 smoke test must cover both false and true against a service-backed database.
 
 ### `client.connect`
 

@@ -30,8 +30,8 @@ A later implementation may also expose an explicit generator config value, but t
 | --- | --- | --- |
 | Phase 0 | No runtime default change | Contracts/fixtures/matrices/CI plan only. |
 | Phase 1-3 development | `rust-legacy` or explicit opt-in depending on current repo defaults | `js-bridge` requires explicit flag and clear experimental warning. |
-| SQLite preview | Explicit opt-in `js-bridge` | SQLite lifecycle/CRUD/serialization/error/transaction fixtures pass. |
-| Multi-provider preview | Explicit opt-in `js-bridge` | SQLite + PostgreSQL pass, MySQL/MariaDB status documented. |
+| PostgreSQL preview | Explicit opt-in `js-bridge` | Self-hosted PostgreSQL lifecycle/CRUD/serialization/error/transaction fixtures pass. |
+| Multi-provider preview | Explicit opt-in `js-bridge` | Deferred until SQLite or MySQL/MariaDB support is separately approved and documented. |
 | Default flip candidate | `js-bridge` for Prisma 7 generated clients | All Required compatibility gates pass or documented breaks are approved. |
 | Legacy retirement | `rust-legacy` v5/v6 only or removed | Separate release decision; not a Phase 0 decision. |
 
@@ -63,7 +63,7 @@ Required messages before default flip:
 - Prisma 7 requires explicit Prisma Client output.
 - Datasource configuration moves toward `prisma.config.ts` / adapter setup; legacy Python datasource overrides are provider-gated.
 - Rust binary override docs apply only to legacy mode.
-- MongoDB and metrics are not part of the first Prisma 7 default claim.
+- SQLite, MySQL/MariaDB, MongoDB, and metrics are not part of the first Prisma 7 default claim.
 - Users do not need to write JavaScript calls for normal Python client operations.
 
 ## CI switch policy

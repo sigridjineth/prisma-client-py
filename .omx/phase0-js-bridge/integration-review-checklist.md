@@ -9,7 +9,7 @@ Status: Completed Phase 0 review gate
 - [x] `bridge-protocol.md` covers envelope, lifecycle, timeout/cancel, errors, serialization, and stdout/stderr split.
 - [x] `transaction-semantics.md` covers batch, interactive, IDs, rollback, cancellation, timeout, bridge death, disconnect, and nested behavior.
 - [x] `compatibility-matrix.md` covers public Python API gates and default-flip criteria.
-- [x] `adapter-support-matrix.md` covers SQLite first, PostgreSQL next, MySQL/MariaDB posture, adapter packages, datasource override flow, and unsupported/deferred providers.
+- [x] `adapter-support-matrix.md` covers PostgreSQL first, SQLite/MySQL/MariaDB deferred posture, adapter packages, datasource override flow, and unsupported/deferred providers.
 - [x] `migration-flag-default-policy.md` covers `PRISMA_PY_ENGINE`, opt-in/default flip, legacy Rust posture, and diagnostics.
 - [x] `golden-fixtures.md` and `fixtures/*.json` cover lifecycle, query success, errors, serialization, and transaction lifecycle.
 - [x] `ci-test-plan.md` names suite families, matrix dimensions, provider gates, and release gates.

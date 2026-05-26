@@ -13,7 +13,7 @@ construct adapter instances directly.
 | Level | Meaning | Release gate |
 | --- | --- | --- |
 | First | Required for the first JS bridge opt-in integration target. | Must pass before any opt-in release is called usable. |
-| Next | Planned after SQLite; can ship when provider-specific fixtures and CI services pass. | Must pass before provider is documented as supported. |
+| Next | Planned after PostgreSQL; can ship when provider-specific fixtures and CI services pass. | Must pass before provider is documented as supported. |
 | Deferred | Known provider/adapter path, but not in first bridge scope. | Must have clear diagnostics or legacy-only guidance. |
 | Unsupported | Not accepted by the JS bridge until a new Phase 0 decision changes this matrix. | Must fail early with actionable message. |
 
@@ -21,14 +21,14 @@ construct adapter instances directly.
 
 | Provider / deployment target | Prisma schema provider | Required JS package(s) in generated bridge project | Level | Scope notes | Pass criteria | Fail criteria |
 | --- | --- | --- | --- | --- | --- | --- |
-| Local SQLite file | `sqlite` | `@prisma/client`, `@prisma/adapter-better-sqlite3`; TypeScript projects may also need `@types/better-sqlite3` as a dev dependency. | First | Primary Phase 1 integration path. Use a local `file:` URL and generated Prisma Client output. Native dependency installation must be surfaced clearly. | Generate bridge project, install packages, instantiate `PrismaBetterSqlite3`, receive bridge `ready`, pass CRUD/scalar/error/batch transaction fixtures. | Missing native build support, missing adapter, corrupted stdout protocol, or any Python API parity regression. |
+| Local SQLite file | `sqlite` | `@prisma/client`, `@prisma/adapter-better-sqlite3`; TypeScript projects may also need `@types/better-sqlite3` as a dev dependency. | Deferred | Deferred because the initial maintainer target is PostgreSQL only. | Later SQLite fixture suite proves lifecycle, CRUD/scalar/error, datasource override, native dependency diagnostics, and transaction behavior. | Claiming support before native dependency and file datasource behavior are tested. |
 | SQLite-compatible libSQL / Turso | `sqlite` | `@prisma/client`, `@prisma/adapter-libsql`. | Deferred | Useful for remote SQLite-compatible deployments but not required for first local SQLite proof. | Later provider fixture passes URL/auth-token configuration and CRUD/scalar parity. | Treating libSQL as local file SQLite without explicit config or silently ignoring auth token. |
 | Cloudflare D1 | `sqlite` | `@prisma/client`, `@prisma/adapter-d1`. | Deferred | D1 binding model is not a normal local Node subprocess fit; requires separate runtime design. | Later bridge design documents how a Python subprocess supplies D1 binding equivalent, or declares unsupported. | Claiming support while requiring Cloudflare Worker globals in local Python runtime. |
-| Self-hosted PostgreSQL | `postgresql` | `@prisma/client`, `@prisma/adapter-pg`. | Next | First networked DB candidate. Must validate connection pooling, schema option behavior, and Decimal/JSON/Bytes mappings. | Docker/service-backed CI passes CRUD, select/include, scalar, error, batch transaction, and connection failure fixtures. | Provider marked supported without networked CI or with pool/timeout behavior undocumented. |
+| Self-hosted PostgreSQL | `postgresql` | `@prisma/client`, `@prisma/adapter-pg`. | First | Primary Phase 1 integration path and only initial provider target. Package existence was checked on 2026-05-26 via `npm view @prisma/adapter-pg` (`latest` 7.8.0). Must validate connection pooling, schema option behavior, and Decimal/JSON/Bytes mappings. | Docker/service-backed CI passes lifecycle, CRUD, select/include, scalar, error, batch transaction, interactive transaction, and connection failure fixtures. | Provider marked supported without networked CI or with pool/timeout behavior undocumented. |
 | Neon / serverless PostgreSQL | `postgresql` | `@prisma/client`, `@prisma/adapter-neon`. | Deferred | Serverless transport and pooling differences should follow after self-hosted PostgreSQL. | Later CI or documented smoke environment validates connection string and cold-start/timeout diagnostics. | Reusing `@prisma/adapter-pg` assumptions for Neon-specific runtime behavior without tests. |
 | Prisma Postgres | `postgresql` | `@prisma/client`, `@prisma/adapter-ppg`. | Deferred | Managed Prisma Postgres path; not needed for first bridge parity. | Later tests prove setup and provider-specific connection diagnostics. | Generated bridge installs the package by default for all PostgreSQL users. |
 | CockroachDB | `cockroachdb` | Likely PostgreSQL-compatible adapter path; exact adapter choice must be revalidated before support. | Deferred | Prisma supports CockroachDB as a PostgreSQL-compatible provider, but bridge support must not be inferred without fixtures. | Dedicated CockroachDB fixtures pass ID generation, transaction retry, and scalar behavior. | Marking supported based only on PostgreSQL tests. |
-| Self-hosted MySQL / MariaDB | `mysql` | `@prisma/client`, `@prisma/adapter-mariadb` after dependency validation. | Next | Second networked DB candidate. Package existence was checked on 2026-05-26 via `npm view @prisma/adapter-mariadb` (`latest` 7.8.0), but provider support remains gated on CI. | Docker/service-backed CI passes CRUD, scalar, error, batch, and interactive transaction fixtures for MySQL and/or MariaDB. | Provider marked supported without proving connection options, Decimal/DateTime behavior, and transaction rollback. |
+| Self-hosted MySQL / MariaDB | `mysql` | `@prisma/client`, `@prisma/adapter-mariadb` after dependency validation. | Deferred | Out of the initial PostgreSQL-only scope. Package existence was checked on 2026-05-26 via `npm view @prisma/adapter-mariadb` (`latest` 7.8.0), but provider support remains gated on separate CI. | Later Docker/service-backed CI passes CRUD, scalar, error, batch, and interactive transaction fixtures for MySQL and/or MariaDB. | Provider marked supported without proving connection options, Decimal/DateTime behavior, and transaction rollback. |
 | PlanetScale | `mysql` | `@prisma/client`, `@prisma/adapter-planetscale`; Node versions below built-in `fetch` support may need `undici`. | Deferred | Serverless MySQL path with different transaction and connection assumptions. | Later fixtures document transaction limits and pass provider-specific setup smoke tests. | Treating PlanetScale as equivalent to self-hosted MySQL for transaction semantics. |
 | Microsoft SQL Server | `sqlserver` | `@prisma/client`, `@prisma/adapter-mssql` / `node-mssql` adapter path must be verified against current Prisma docs before support. | Deferred | Not in first bridge release; package naming and setup must be confirmed in the implementation phase. | Later SQL Server service CI passes provider-specific scalar and transaction fixtures. | Shipping unverified package names or support claims. |
 | MongoDB | `mongodb` | None approved for JS bridge Phase 0. | Unsupported | Prisma supports MongoDB generally, but driver-adapter bridge support is not approved for this phase. | Clear unsupported-provider diagnostic points to legacy/deferred documentation. | Attempting to instantiate SQL driver adapters or silently falling back. |
@@ -45,9 +45,9 @@ construct adapter instances directly.
 4. Provider support is opt-in by matrix status: `First` and passing `Next` providers
    may run in JS bridge mode; `Deferred` and `Unsupported` providers must not silently
    choose JS bridge mode.
-5. SQLite is the first implementation target because it requires no external database
-   service and can prove protocol, subprocess, serialization, and Python API parity
-   before networked DB complexity is added.
+5. Self-hosted PostgreSQL is the first implementation target because the maintainer
+   wants to prioritize the primary production database path over local SQLite.
+   SQLite and MySQL/MariaDB stay deferred until separate provider fixtures pass.
 
 
 ## Datasource and adapter-constructor boundary
@@ -56,30 +56,19 @@ Python datasource overrides remain part of the public Python/generator surface. 
 
 ## Provider rollout gates
 
-### SQLite first
-
-SQLite support is complete when all of these pass:
-
-- [ ] Generated bridge package contains `@prisma/client` and `@prisma/adapter-better-sqlite3`.
-- [ ] Local file database URL flows from existing Python datasource override/config into generated bridge adapter construction; `prisma.config.ts` remains generator/config input, but runtime connection values are applied when instantiating `PrismaBetterSqlite3`.
-- [ ] Bridge starts, emits `ready`, answers `healthcheck`, and shuts down without leaving a process.
-- [ ] Python CRUD, select/include/filter/order, scalar, error mapping, and batch transaction fixtures pass.
-- [ ] Native dependency install/build failures produce actionable Python diagnostics.
-- [ ] Tests confirm JS bridge mode does not spawn the Rust query engine.
-
-### PostgreSQL next
+### PostgreSQL first
 
 PostgreSQL support can be marked supported only when:
 
-- [ ] Generated bridge package contains `@prisma/client` and `@prisma/adapter-pg`.
+- [ ] Generated bridge package contains `@prisma/client`, `@prisma/adapter-pg`, and the required `pg` driver dependency.
 - [ ] CI provides a PostgreSQL service and a direct connection string.
 - [ ] CRUD, JSON, Decimal, Bytes, DateTime, relation, error, batch transaction, and interactive transaction fixtures pass.
 - [ ] Connection timeout/pool behavior is documented because Prisma 7 adapter defaults may differ from legacy assumptions.
-- [ ] Provider-specific setup docs include self-hosted PostgreSQL first; Neon/Supabase/serverless variants remain deferred unless separately tested.
+- [ ] Provider-specific setup docs include self-hosted PostgreSQL first; Neon/Supabase/serverless variants, SQLite, and MySQL/MariaDB remain deferred unless separately tested.
 
-### MySQL / MariaDB next
+### MySQL / MariaDB deferred
 
-MySQL/MariaDB support can be marked supported only when:
+MySQL/MariaDB support can be marked supported only when a later provider milestone explicitly enables it:
 
 - [ ] Generated bridge package contains `@prisma/client` and `@prisma/adapter-mariadb`.
 - [ ] CI provides a MySQL or MariaDB service with stable credentials.
@@ -99,8 +88,8 @@ before any query is sent. The Python exception should include:
 
 ## Phase 0 acceptance criteria
 
-- This matrix names the first provider target, next provider targets, required
-  adapter packages, unsupported providers, and pass/fail gates.
+- This matrix names PostgreSQL as the first provider target, deferred provider
+  targets, required adapter packages, unsupported providers, and pass/fail gates.
 - Compatibility status does not imply implementation exists; it defines the later
   implementation checklist.
 - No runtime code, generated templates, package manifests, or CI workflows are

@@ -7,8 +7,8 @@
       "params": {
         "protocolVersion": "2026-05-26.phase0.v1",
         "pid": 12345,
-        "provider": "sqlite",
-        "adapter": "@prisma/adapter-better-sqlite3",
+        "provider": "postgresql",
+        "adapter": "@prisma/adapter-pg",
         "prismaClientVersion": "7.8.0"
       }
     },
@@ -32,8 +32,8 @@
       "meta": {
         "protocolVersion": "2026-05-26.phase0.v1",
         "elapsedMs": 8,
-        "provider": "sqlite",
-        "adapter": "@prisma/adapter-better-sqlite3"
+        "provider": "postgresql",
+        "adapter": "@prisma/adapter-pg"
       }
     },
     {
@@ -61,14 +61,20 @@
     {
       "id": "req_health_1",
       "method": "bridge.healthcheck",
-      "params": {"requireDatabase": false},
+      "params": {
+        "requireDatabase": false
+      },
       "timeoutMs": 1000,
       "clientVersion": "prisma-client-py/phase0"
     },
     {
       "id": "req_connect_1",
       "method": "client.connect",
-      "params": {"datasource": null, "logQueries": false, "adapterOptions": {}},
+      "params": {
+        "datasource": null,
+        "logQueries": false,
+        "adapterOptions": {}
+      },
       "timeoutMs": 5000,
       "clientVersion": "prisma-client-py/phase0"
     },

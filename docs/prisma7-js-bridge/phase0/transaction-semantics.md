@@ -192,7 +192,7 @@ Phase 0 contract:
 
 Acceptance gate for enabling nested transactions:
 
-- SQLite, PostgreSQL, and MySQL/MariaDB adapter-specific fixtures prove:
+- PostgreSQL adapter-specific fixtures prove first; SQLite and MySQL/MariaDB fixtures are deferred until those providers are separately enabled:
   - inner success + outer success commits all changes;
   - inner failure + caught Python exception rolls back only inner changes;
   - outer failure rolls back both inner and outer changes;

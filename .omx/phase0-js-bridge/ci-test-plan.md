@@ -19,7 +19,7 @@ Status: Phase 0 CI contract
 | OS | Linux first; macOS/Windows smoke later | Linux provider matrix is release-blocking; cross-platform stdio path should be smoke-tested. |
 | Prisma | `prisma` and `@prisma/client` 7.8.0 target from plan | Upgrade requires refreshing fixtures/matrices. |
 | Engine lane | `PRISMA_PY_ENGINE=js-bridge`, `PRISMA_PY_ENGINE=rust-legacy` where applicable | No implicit lane. |
-| Provider | SQLite first, PostgreSQL next, MySQL/MariaDB planned | MongoDB excluded from initial Prisma 7 bridge. |
+| Provider | PostgreSQL first and only initial provider; SQLite and MySQL/MariaDB deferred | MongoDB excluded from initial Prisma 7 bridge. |
 
 ## Required suites
 
@@ -75,7 +75,7 @@ Gate: generation succeeds or fails only on deliberate compatibility guards, not 
 
 ### Bridge lifecycle integration tests
 
-Provider: SQLite first.
+Provider: PostgreSQL first.
 
 Required checks:
 
@@ -111,7 +111,7 @@ Bridge-specific checks:
 - relation payloads.
 - raw query behavior or explicit unsupported result.
 
-Gate: SQLite pass before preview; PostgreSQL pass before stable default unless formally deferred.
+Gate: PostgreSQL pass before preview and before stable default; SQLite/MySQL/MariaDB are formally deferred.
 
 ### Transaction/failure-mode tests
 
@@ -129,7 +129,7 @@ Required cases:
 - Malformed protocol response kills bridge and maps error.
 - Missing Node/package/adapter/generated client diagnostics.
 
-Gate: SQLite transaction suite passes before default flip.
+Gate: PostgreSQL transaction suite passes before default flip.
 
 ### Packaging smoke tests
 
@@ -147,8 +147,8 @@ Gate: must pass before stable release.
 No stable Prisma 7 JS bridge default until:
 
 1. Phase 0 artifact validation passes.
-2. SQLite lifecycle/query/serialization/error/transaction suites pass.
-3. PostgreSQL passes or is explicitly deferred in release notes.
+2. PostgreSQL lifecycle/query/serialization/error/transaction suites pass.
+3. SQLite and MySQL/MariaDB are explicitly deferred in release notes until separately supported.
 4. Packaging smoke test passes in a fresh project.
 5. Compatibility matrix Required rows pass.
 6. Unsupported providers/features fail with explicit diagnostics.

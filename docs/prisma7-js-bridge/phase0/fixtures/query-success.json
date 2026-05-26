@@ -3,8 +3,8 @@
   "protocolVersion": "2026-05-26.phase0.v1",
   "scenario": {
     "description": "A model findMany query returns rows that can hydrate generated Python models.",
-    "provider": "sqlite",
-    "adapter": "@prisma/adapter-better-sqlite3"
+    "provider": "postgresql",
+    "adapter": "@prisma/adapter-pg"
   },
   "request": {
     "id": "req_query_1",
@@ -14,8 +14,22 @@
       "model": "User",
       "action": "findMany",
       "args": {
-        "where": {"email": {"contains": "@example.com"}},
-        "select": {"id": true, "email": true, "createdAt": true, "posts": {"select": {"id": true, "title": true}}}
+        "where": {
+          "email": {
+            "contains": "@example.com"
+          }
+        },
+        "select": {
+          "id": true,
+          "email": true,
+          "createdAt": true,
+          "posts": {
+            "select": {
+              "id": true,
+              "title": true
+            }
+          }
+        }
       },
       "resultShape": "many"
     },
@@ -28,17 +42,23 @@
       {
         "id": 1,
         "email": "alice@example.com",
-        "createdAt": {"$type": "DateTime", "value": "2026-05-26T05:54:00.000Z"},
+        "createdAt": {
+          "$type": "DateTime",
+          "value": "2026-05-26T05:54:00.000Z"
+        },
         "posts": [
-          {"id": 10, "title": "Bridge contract"}
+          {
+            "id": 10,
+            "title": "Bridge contract"
+          }
         ]
       }
     ],
     "meta": {
       "protocolVersion": "2026-05-26.phase0.v1",
       "elapsedMs": 6,
-      "provider": "sqlite",
-      "adapter": "@prisma/adapter-better-sqlite3"
+      "provider": "postgresql",
+      "adapter": "@prisma/adapter-pg"
     }
   }
 }
