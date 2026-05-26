@@ -6,7 +6,7 @@ Scope: documentation, contracts, matrices, fixture examples, and CI plan only; n
 
 ## Purpose
 
-This directory is the Phase 0 review bundle for reviving `prisma-client-py` on Prisma 7 through a persistent JS/TS Prisma Client bridge.
+This directory is the team-run evidence and mirrored working copy for the canonical Phase 0 review bundle in `docs/prisma7-js-bridge/phase0/`.
 
 The Python API remains the public API. Query execution is delegated to a generated Node bridge process that imports the generated Prisma JS/TS Client and talks to Python over newline-delimited JSON messages on stdio.
 
@@ -17,10 +17,15 @@ These artifacts are derived from the leader-approved planning bundle:
 - `.omx/plans/prd-prisma7-js-bridge-migration.md`
 - `.omx/plans/test-spec-prisma7-js-bridge-migration.md`
 - `.omx/plans/team-handoff-prisma7-js-bridge-phase0.md`
-- `.omx/ultragoal/goals.json` active goal `G001-phase0-protocol-lifecycle`
+- `.omx/ultragoal/goals.json` active goals `G001` through `G006`
 - proof spike evidence under `.omx/proof-spikes/prisma7/`
 
 The worker did not mutate `.omx/ultragoal`; that path remains leader-owned.
+
+
+## Canonical source of truth
+
+`docs/prisma7-js-bridge/phase0/` is the canonical Phase 0 contract for later implementation work. `.omx/phase0-js-bridge/` is retained as team-run evidence and a mirrored working copy; if a mirrored `.omx` artifact ever diverges, the `docs/` artifact wins. Golden fixture JSON is mirrored into `docs/prisma7-js-bridge/phase0/fixtures/` so Phase 1 agents do not need to infer contracts from hidden state.
 
 ## Artifact map
 

@@ -64,7 +64,7 @@ Contract:
 
 1. Python `batch_()` builds a finite ordered list of write actions.
 2. Commit sends one bridge request whose method is reserved for batch execution
-   (for example, `transaction.batch`).
+   `query.batch`.
 3. The Node bridge executes the operations through Prisma Client as one atomic
    transaction.
 4. Operations execute in the order Python queued them.
@@ -107,6 +107,11 @@ Contract:
 9. Any operation received for a terminal or unknown ID fails with a mapped
    `TransactionError`/`TransactionExpiredError` rather than silently executing on
    the root client.
+
+
+Bridge host model:
+
+The Node bridge hosts interactive transactions by starting a Prisma `$transaction(async (tx) => ...)` callback and keeping that callback unresolved while a bridge-owned command loop dispatches transaction-bound requests to `tx`. `transaction.commit` resolves the command loop so Prisma commits; `transaction.rollback` and `transaction.abort` reject or throw inside the loop so Prisma rolls back. The transaction client must never escape that callback lifetime, and Python only sees the opaque `transactionId` managed by the bridge table.
 
 Interactive transaction methods reserved for the protocol contract:
 

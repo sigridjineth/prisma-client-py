@@ -274,12 +274,12 @@ The bridge maps this to Prisma JS Client `$transaction([...])` where supported.
 {
   "id": "req_cancel_000001",
   "method": "bridge.cancel",
-  "params": {"targetId": "req_000001", "reason": "python-timeout"},
+  "params": {"targetRequestId": "req_000001", "reason": "python-timeout"},
   "timeoutMs": 1000
 }
 ```
 
-Cancellation is best-effort unless Prisma JS Client exposes a stronger cancellation primitive for the specific operation. If cancellation cannot interrupt the in-flight Prisma call, the bridge must still mark the target as cancelled from the Python protocol perspective and must not reuse the request ID.
+Cancellation is best-effort unless Prisma JS Client exposes a stronger cancellation primitive for the specific operation. If cancellation cannot interrupt the in-flight Prisma call, the bridge must still mark the target request as cancelled from the Python protocol perspective and must not reuse the request ID.
 
 For interactive transactions, cancellation of any operation marks the transaction as tainted. A tainted transaction must roll back and reject subsequent operations with `TRANSACTION_CLOSED`.
 
@@ -322,6 +322,7 @@ Minimum code families:
 | `BRIDGE_TIMEOUT` | Operation exceeded timeout. | false |
 | `BRIDGE_CANCELLED` | Operation was cancelled by Python. | false |
 | `BRIDGE_PROCESS_EXITED` | Bridge died before responding. | unknown/false |
+| `BRIDGE_SHUTDOWN_UNSAFE` | Shutdown or disconnect could not prove open transaction rollback. | false |
 | `NODE_NOT_FOUND` | Node executable missing. | false |
 | `NODE_UNSUPPORTED_VERSION` | Node does not satisfy Prisma 7 minimum. | false |
 | `PRISMA_CLIENT_NOT_FOUND` | Generated `@prisma/client` output missing. | false |
@@ -329,6 +330,7 @@ Minimum code families:
 | `DATASOURCE_OVERRIDE_UNSUPPORTED` | Python datasource override cannot map to the chosen adapter. | false |
 | `PRISMA_VALIDATION_ERROR` | Prisma validation error. | false |
 | `PRISMA_RUNTIME_ERROR` | Prisma runtime error. | depends on Prisma code |
+| `PRISMA_KNOWN_REQUEST_ERROR` | Prisma known request error with stable `P####` code. | depends on Prisma code |
 | `TRANSACTION_CLOSED` | Transaction was committed, rolled back, timed out, or tainted. | false |
 | `TRANSACTION_NESTED_UNSUPPORTED` | Nested interactive transaction unsupported in JS bridge mode. | false |
 | `RAW_QUERY_UNSUPPORTED` | Provider/adapter raw query path not in support matrix. | false |

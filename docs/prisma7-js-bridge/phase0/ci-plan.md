@@ -117,12 +117,14 @@ Gate: SQLite pass before preview; PostgreSQL pass before stable default unless f
 
 Required cases:
 
-- Batch transaction commit and rollback.
+- Batch transaction commit and rollback, including second-operation failure rollback.
 - Interactive transaction commit.
 - Interactive transaction rollback on Python exception.
 - Timeout inside transaction taints and rolls back.
 - Cancellation taints and rolls back.
-- Bridge process death invalidates all open transaction IDs.
+- Bridge process death invalidates all open transaction IDs with rollback outcome `unknown`/`lost`.
+- Client disconnect with an open transaction rolls back or reports unsafe rollback timeout explicitly.
+- Closed transaction ID reuse is rejected deterministically.
 - Nested transaction attempt returns explicit unsupported error.
 - Malformed protocol response kills bridge and maps error.
 - Missing Node/package/adapter/generated client diagnostics.

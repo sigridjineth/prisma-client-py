@@ -10,15 +10,15 @@ Status: Completed Phase 0 review gate
 - [x] `transaction-semantics.md` covers batch, interactive, IDs, rollback, cancellation, timeout, bridge death, disconnect, and nested behavior.
 - [x] `compatibility-matrix.md` covers public Python API gates and default-flip criteria.
 - [x] `adapter-support-matrix.md` covers SQLite first, PostgreSQL next, MySQL/MariaDB posture, adapter packages, datasource override flow, and unsupported/deferred providers.
-- [x] `migration-flag-default-policy.md` covers `PRISMA_PY_ENGINE`, opt-in/default flip, legacy Rust posture, and diagnostics.
+- [x] `migration-policy.md` covers `PRISMA_PY_ENGINE`, opt-in/default flip, legacy Rust posture, and diagnostics.
 - [x] `golden-fixtures.md` and `fixtures/*.json` cover lifecycle, query success, errors, serialization, and transaction lifecycle.
-- [x] `ci-test-plan.md` names suite families, matrix dimensions, provider gates, and release gates.
+- [x] `ci-plan.md` names suite families, matrix dimensions, provider gates, and release gates.
 - [x] `rejected-alternatives.md` records direct runtime, Rust/env-var path, one-shot Node, HTTP-first, direct JS calls, and private internals decisions.
 
 ## Consistency checks
 
 - [x] `docs/prisma7-js-bridge/phase0/` is declared canonical; `.omx/phase0-js-bridge/` is a mirrored evidence copy.
-- [x] README links match existing `.omx` mirror files, including `migration-flag-default-policy.md`, `ci-test-plan.md`, `integration-review-checklist.md`, and `fixtures/manifest.json`; canonical docs use `migration-policy.md` and `ci-plan.md`.
+- [x] README links match existing docs files, including `migration-policy.md`, `ci-plan.md`, `integration-review-checklist.md`, and `fixtures/manifest.json`.
 - [x] Protocol version is consistent across markdown and JSON fixtures: `2026-05-26.phase0.v1`.
 - [x] Batch transaction method is consistently `query.batch`.
 - [x] Error code names match between protocol, fixtures, migration policy, and transaction semantics.

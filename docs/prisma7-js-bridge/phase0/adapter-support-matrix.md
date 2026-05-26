@@ -28,7 +28,7 @@ construct adapter instances directly.
 | Neon / serverless PostgreSQL | `postgresql` | `@prisma/client`, `@prisma/adapter-neon`. | Deferred | Serverless transport and pooling differences should follow after self-hosted PostgreSQL. | Later CI or documented smoke environment validates connection string and cold-start/timeout diagnostics. | Reusing `@prisma/adapter-pg` assumptions for Neon-specific runtime behavior without tests. |
 | Prisma Postgres | `postgresql` | `@prisma/client`, `@prisma/adapter-ppg`. | Deferred | Managed Prisma Postgres path; not needed for first bridge parity. | Later tests prove setup and provider-specific connection diagnostics. | Generated bridge installs the package by default for all PostgreSQL users. |
 | CockroachDB | `cockroachdb` | Likely PostgreSQL-compatible adapter path; exact adapter choice must be revalidated before support. | Deferred | Prisma supports CockroachDB as a PostgreSQL-compatible provider, but bridge support must not be inferred without fixtures. | Dedicated CockroachDB fixtures pass ID generation, transaction retry, and scalar behavior. | Marking supported based only on PostgreSQL tests. |
-| Self-hosted MySQL / MariaDB | `mysql` | `@prisma/client`, `@prisma/adapter-mariadb`. | Next | Second networked DB candidate. The adapter uses the JavaScript `mariadb` driver path. | Docker/service-backed CI passes CRUD, scalar, error, and batch transaction fixtures for MySQL and/or MariaDB. | Provider marked supported without proving connection options, Decimal/DateTime behavior, and transaction rollback. |
+| Self-hosted MySQL / MariaDB | `mysql` | `@prisma/client`, `@prisma/adapter-mariadb` after dependency validation. | Next | Second networked DB candidate. Package existence was checked on 2026-05-26 via `npm view @prisma/adapter-mariadb` (`latest` 7.8.0), but provider support remains gated on CI. | Docker/service-backed CI passes CRUD, scalar, error, batch, and interactive transaction fixtures for MySQL and/or MariaDB. | Provider marked supported without proving connection options, Decimal/DateTime behavior, and transaction rollback. |
 | PlanetScale | `mysql` | `@prisma/client`, `@prisma/adapter-planetscale`; Node versions below built-in `fetch` support may need `undici`. | Deferred | Serverless MySQL path with different transaction and connection assumptions. | Later fixtures document transaction limits and pass provider-specific setup smoke tests. | Treating PlanetScale as equivalent to self-hosted MySQL for transaction semantics. |
 | Microsoft SQL Server | `sqlserver` | `@prisma/client`, `@prisma/adapter-mssql` / `node-mssql` adapter path must be verified against current Prisma docs before support. | Deferred | Not in first bridge release; package naming and setup must be confirmed in the implementation phase. | Later SQL Server service CI passes provider-specific scalar and transaction fixtures. | Shipping unverified package names or support claims. |
 | MongoDB | `mongodb` | None approved for JS bridge Phase 0. | Unsupported | Prisma supports MongoDB generally, but driver-adapter bridge support is not approved for this phase. | Clear unsupported-provider diagnostic points to legacy/deferred documentation. | Attempting to instantiate SQL driver adapters or silently falling back. |
@@ -49,6 +49,11 @@ construct adapter instances directly.
    service and can prove protocol, subprocess, serialization, and Python API parity
    before networked DB complexity is added.
 
+
+## Datasource and adapter-constructor boundary
+
+Python datasource overrides remain part of the public Python/generator surface. The generated bridge must translate the resolved datasource URL/options into the provider-specific JavaScript adapter constructor inside the Node bridge project. The bridge must not assume that `prisma.config.ts` alone supplies runtime adapter credentials: `prisma.config.ts` is the generation/configuration source, while the adapter constructor receives the concrete connection string or provider options at bridge startup. Missing or conflicting datasource values must fail before the bridge emits `ready`.
+
 ## Provider rollout gates
 
 ### SQLite first
@@ -56,7 +61,7 @@ construct adapter instances directly.
 SQLite support is complete when all of these pass:
 
 - [ ] Generated bridge package contains `@prisma/client` and `@prisma/adapter-better-sqlite3`.
-- [ ] Local file database URL is supplied through the Prisma 7 config path used by the generated bridge.
+- [ ] Local file database URL flows from existing Python datasource override/config into generated bridge adapter construction; `prisma.config.ts` remains generator/config input, but runtime connection values are applied when instantiating `PrismaBetterSqlite3`.
 - [ ] Bridge starts, emits `ready`, answers `healthcheck`, and shuts down without leaving a process.
 - [ ] Python CRUD, select/include/filter/order, scalar, error mapping, and batch transaction fixtures pass.
 - [ ] Native dependency install/build failures produce actionable Python diagnostics.
@@ -68,7 +73,7 @@ PostgreSQL support can be marked supported only when:
 
 - [ ] Generated bridge package contains `@prisma/client` and `@prisma/adapter-pg`.
 - [ ] CI provides a PostgreSQL service and a direct connection string.
-- [ ] CRUD, JSON, Decimal, Bytes, DateTime, relation, error, and batch transaction fixtures pass.
+- [ ] CRUD, JSON, Decimal, Bytes, DateTime, relation, error, batch transaction, and interactive transaction fixtures pass.
 - [ ] Connection timeout/pool behavior is documented because Prisma 7 adapter defaults may differ from legacy assumptions.
 - [ ] Provider-specific setup docs include self-hosted PostgreSQL first; Neon/Supabase/serverless variants remain deferred unless separately tested.
 
@@ -78,7 +83,7 @@ MySQL/MariaDB support can be marked supported only when:
 
 - [ ] Generated bridge package contains `@prisma/client` and `@prisma/adapter-mariadb`.
 - [ ] CI provides a MySQL or MariaDB service with stable credentials.
-- [ ] CRUD, Decimal, DateTime, relation, error, and batch transaction fixtures pass.
+- [ ] CRUD, Decimal, DateTime, relation, error, batch transaction, and interactive transaction fixtures pass.
 - [ ] PlanetScale/serverless behavior is documented as deferred unless separate tests pass.
 
 ## Unsupported-provider behavior

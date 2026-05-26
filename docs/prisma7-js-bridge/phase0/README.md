@@ -6,7 +6,7 @@ Scope: documentation, contracts, matrices, fixture examples, and CI plan only; n
 
 ## Purpose
 
-This directory is the Phase 0 review bundle for reviving `prisma-client-py` on Prisma 7 through a persistent JS/TS Prisma Client bridge.
+This directory is the canonical public Phase 0 review bundle for reviving `prisma-client-py` on Prisma 7 through a persistent JS/TS Prisma Client bridge.
 
 The Python API remains the public API. Query execution is delegated to a generated Node bridge process that imports the generated Prisma JS/TS Client and talks to Python over newline-delimited JSON messages on stdio.
 
@@ -17,10 +17,15 @@ These artifacts are derived from the leader-approved planning bundle:
 - `.omx/plans/prd-prisma7-js-bridge-migration.md`
 - `.omx/plans/test-spec-prisma7-js-bridge-migration.md`
 - `.omx/plans/team-handoff-prisma7-js-bridge-phase0.md`
-- `.omx/ultragoal/goals.json` active goal `G001-phase0-protocol-lifecycle`
+- `.omx/ultragoal/goals.json` active goals `G001` through `G006`
 - proof spike evidence under `.omx/proof-spikes/prisma7/`
 
 The worker did not mutate `.omx/ultragoal`; that path remains leader-owned.
+
+
+## Canonical source of truth
+
+`docs/prisma7-js-bridge/phase0/` is the canonical Phase 0 contract for later implementation work. `.omx/phase0-js-bridge/` is retained as team-run evidence and a mirrored working copy; if a mirrored `.omx` artifact ever diverges, the `docs/` artifact wins. Golden fixture JSON is copied into this docs directory so Phase 1 agents do not need to infer contracts from hidden state.
 
 ## Artifact map
 
@@ -30,10 +35,10 @@ The worker did not mutate `.omx/ultragoal`; that path remains leader-owned.
 | [`transaction-semantics.md`](transaction-semantics.md) | Batch and interactive transaction behavior, transaction IDs, rollback/failure policy, and nested transaction handling. | G002 |
 | [`compatibility-matrix.md`](compatibility-matrix.md) | Python public API compatibility criteria and default-flip gates. | G003 |
 | [`adapter-support-matrix.md`](adapter-support-matrix.md) | Provider/driver-adapter support phases and package assumptions. | G003 |
-| [`migration-flag-default-policy.md`](migration-flag-default-policy.md) | `PRISMA_PY_ENGINE` flag, rollout posture, default flip, diagnostics, and release gating. | G004 |
+| [`migration-policy.md`](migration-policy.md) | `PRISMA_PY_ENGINE` flag, rollout posture, default flip, diagnostics, and release gating. | G004 |
 | [`rejected-alternatives.md`](rejected-alternatives.md) | Decision log for rejected or deferred runtime architectures. | G004 |
 | [`golden-fixtures.md`](golden-fixtures.md) | Fixture contract and review checklist for golden request/response/error/serialization/transaction examples. | G005 |
-| [`ci-test-plan.md`](ci-test-plan.md) | Provider matrix, exact suite families, commands, and pass/fail gates. | G005 |
+| [`ci-plan.md`](ci-plan.md) | Provider matrix, exact suite families, commands, and pass/fail gates. | G005 |
 | [`integration-review-checklist.md`](integration-review-checklist.md) | Cross-artifact consistency checklist for Phase 0 review. | G006 |
 | [`fixtures/manifest.json`](fixtures/manifest.json) and sibling JSON files | Concrete golden fixture examples for later tests. | G005 |
 

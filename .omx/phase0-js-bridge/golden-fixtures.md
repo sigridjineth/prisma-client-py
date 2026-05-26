@@ -16,7 +16,7 @@ Golden fixtures make the Python <-> Node bridge boundary reviewable before runti
 | `fixtures/query-success.json` | Model query request/response and result shape. |
 | `fixtures/error-mapping.json` | Prisma validation/runtime and bridge protocol errors. |
 | `fixtures/serialization.json` | Decimal, BigInt, DateTime, JSON, Bytes, enum, null, relations, and raw rows. |
-| `fixtures/transaction-lifecycle.json` | Interactive transaction start/query/commit/rollback/timeout and batch transaction examples. |
+| `fixtures/transaction-lifecycle.json` | Batch success/failure, interactive commit/rollback/timeout/cancellation, bridge death, disconnect rollback/unsafe timeout, nested unsupported, and closed-ID reuse examples. |
 
 ## Fixture invariants
 
@@ -34,7 +34,7 @@ Golden fixtures make the Python <-> Node bridge boundary reviewable before runti
 3. stdout contamination is classified as `BRIDGE_PROTOCOL_ERROR`.
 4. Error fixtures map to expected Python exception classes where possible.
 5. Serialization fixtures round-trip into generated Python model/scalar types.
-6. Transaction fixtures assert commit/rollback state transitions and closed-ID rejection.
+6. Transaction fixtures assert commit/rollback state transitions, rollback uncertainty, nested unsupported behavior, cancellation, disconnect handling, and closed-ID rejection.
 7. Unsupported provider/feature fixtures produce explicit project-owned errors.
 
 ## Acceptance criteria

@@ -1,73 +1,84 @@
-# Python API Compatibility Matrix
+# Phase 0 compatibility matrix: Python API gates
 
-Date: 2026-05-26
-Status: Phase 0 compatibility contract
+<!-- markdownlint-disable MD013 -->
+Status: Phase 0 contract. No runtime implementation is authorized by this artifact.
 
-## Compatibility principle
+This matrix defines the Python API compatibility gates for the Prisma 7 JS/TS
+Prisma Client bridge. The bridge may change the internal engine boundary, but it
+must not require application code to call JavaScript directly.
 
-The JS bridge revives Prisma 7 without asking Python users to call JavaScript directly. Default flip is blocked until compatibility gates below pass or a breaking/deferred behavior is explicitly approved and documented.
+## Status legend
 
-## Status meanings
-
-| Status | Meaning |
-| --- | --- |
-| Required | Must pass before JS bridge becomes default. |
-| Required with changed backend | Public Python API remains source-compatible, but implementation changes. |
-| Partial | Supported for a subset; unsupported cases must fail with explicit diagnostics. |
-| Deferred | Not part of initial default claim. |
-| Breaking / v6-only | Behavior cannot be preserved for Prisma 7 default and must be documented as legacy or removed. |
-
-## Public API matrix
-
-| Area | Current behavior anchor | JS bridge expectation | Status | Pass/fail gate |
-| --- | --- | --- | --- | --- |
-| Generated imports | `from prisma import Prisma`, `from prisma.models import User` after generation. | Import paths remain valid for generated Python client. | Required | Existing generated-client import tests pass. |
-| Client construction | `Prisma(...)` supports sync/async generated clients and config values. | Constructor signatures remain source-compatible; unsupported JS bridge options fail explicitly. | Required | Static type snapshots and constructor tests pass. |
-| `connect()` / `disconnect()` | Starts/stops Rust query engine today. | Starts/stops Node bridge and Prisma JS Client while preserving timeout parameter behavior. | Required with changed backend | Lifecycle fixtures and client tests pass. |
-| Context managers | `with Prisma()` and `async with Prisma()` connect/disconnect. | Same public behavior; shutdown rolls back active transactions. | Required | Context-manager tests pass for bridge mode. |
-| CRUD actions | Model delegates expose create/read/update/delete/upsert/count/etc. | Same Python method names and signatures; bridge receives model/action/args envelope. | Required | Existing action tests pass or intentional Prisma 7 deltas documented. |
-| select/include/filter/order | Python builders produce selections and filters. | Result shape and validation remain source-compatible. | Required | Golden result hydration and existing selecting-fields tests pass. |
-| Model hydration | Results become generated Python models. | Hydration/deserialization preserves scalar, relation, optional, and list behavior. | Required | Serialization fixtures and model tests pass. |
-| Exceptions | Existing public exception classes where possible. | Bridge maps JS/Prisma/adapter errors into existing classes with `meta`/cause details. | Required | Error mapping fixtures pass. |
-| Batch transactions | Existing batch behavior where exposed. | Map to Prisma JS Client `$transaction([...])`. | Required | Batch transaction fixtures pass for SQLite. |
-| Interactive transactions | `Prisma.tx()` context manager. | Preserve context-manager source API; use bridge transaction IDs. | Required before default flip unless explicitly deferred | SQLite rollback/commit/timeout fixtures pass. |
-| Nested transactions | Existing behavior warns and is unstable. | Explicit unsupported result in JS bridge initial mode. | Partial | Attempt fails with `TRANSACTION_NESTED_UNSUPPORTED`. |
-| Raw queries | Raw SQL support varies by provider. | Supported only per adapter/provider after fixtures. | Partial | Provider-specific raw query fixtures pass or `RAW_QUERY_UNSUPPORTED`. |
-| Datasource override | Python datasource override and SQLite path adjustment. | SQLite override is first required case; other providers require adapter mapping. | Partial | SQLite override test passes; unsupported providers fail explicitly. |
-| Metrics | Rust engine `/metrics` public method. | Prisma 7 removed legacy metrics path; no default parity claim. | Breaking / v6-only initially | `get_metrics()` is documented v6-only or replaced by new observability contract. |
-| Binary override env vars | `PRISMA_QUERY_ENGINE_BINARY`, engine hash/cache settings. | Not supported in JS bridge default. | Breaking / v6-only | JS bridge mode never reads/spawns Rust query-engine binary. |
-| MongoDB | Existing docs/code mention MongoDB support. | Prisma 7 MongoDB support is not in initial default path. | Deferred / v6-only | MongoDB v7 path fails with explicit unsupported provider message. |
-| Data Proxy/library engine | Not supported today. | Not part of first JS bridge. | Deferred | Explicit unsupported diagnostics. |
-| Generated JS/TS project | Not present today. | Generated beside Python client with explicit Prisma Client output. | Required with changed backend | Generator fixture verifies files and package metadata later. |
-
-## Default flip gates
-
-JS bridge may become default only when all Required rows pass for SQLite and at least one networked DB path is either passing or formally deferred from stable scope.
-
-Minimum default-flip criteria:
-
-1. Existing generated Python client imports unchanged.
-2. Existing CRUD API signatures remain source-compatible.
-3. `connect`, `disconnect`, sync/async context managers, and timeout behavior pass bridge tests.
-4. Model hydration golden fixtures pass for all supported scalar categories.
-5. Error mapping fixtures preserve existing exception classes where possible.
-6. Transactions pass existing behavior tests or documented changed behavior is approved.
-7. User code does not need direct JS calls.
-8. JS bridge mode does not spawn Rust query-engine binaries or use Prisma 7 removed engine env vars.
-9. Unsupported features fail with project-owned diagnostics, not Pydantic/Node stack leaks.
-
-## Intentional compatibility breaks for initial Prisma 7 bridge
-
-| Break/defer | Reason | Required user-facing messaging |
+| Status | Meaning | Default-flip rule |
 | --- | --- | --- |
-| Rust binary overrides unavailable in JS bridge mode. | Prisma 7 default is Rust-binary-free and driver-adapter based. | `PRISMA_QUERY_ENGINE_BINARY` applies only to legacy Rust/v5/v6 mode. |
-| Legacy metrics API not supported in JS bridge mode. | Prisma 7 removed legacy metrics feature. | Point to future adapter/OpenTelemetry observability story. |
-| MongoDB excluded from first Prisma 7 bridge default. | Prisma 7 MongoDB support is not available in the planned bridge gate. | Provider unsupported for Prisma 7 bridge; use legacy/v6 maintenance lane. |
-| Nested interactive transactions unsupported. | Existing Python docs already mark related behavior unstable; savepoint semantics need separate proof. | Raise `TRANSACTION_NESTED_UNSUPPORTED`. |
+| Supported | Must work before JS bridge becomes default. | Required pass. |
+| Partial | A subset may ship behind explicit opt-in with documented limits. | Must not block opt-in; blocks default unless explicitly accepted. |
+| Deferred | Out of first bridge release. Must fail clearly or stay on legacy path. | Blocks default if existing Python API behavior would silently regress. |
+| Breaking | Intentional compatibility break. Requires migration note and release approval. | Blocks default until approved. |
 
-## Acceptance criteria
+## Compatibility principles
 
-- Every public API area has a status and pass/fail gate.
-- Required gates can be converted directly into tests.
-- Partial/deferred/breaking behavior has explicit user-facing messaging.
-- Default flip cannot occur without transaction, error, serialization, and lifecycle fixture evidence.
+1. Existing Python imports and generated client module names remain source-compatible.
+2. Python methods keep their public signatures unless a breaking change is explicitly
+   listed in this matrix.
+3. JS bridge mode is selected behind a feature flag first; legacy Rust-query-engine
+   behavior remains the fallback until all default-flip gates pass.
+4. Python users never instantiate Prisma JS Client or adapter classes directly.
+5. Exceptions remain Python exceptions; Prisma error metadata may be added but must
+   not replace established exception classes where compatibility is possible.
+6. Bridge stdout is protocol-only; user-visible logs and diagnostics must not corrupt
+   protocol frames.
+
+## Python API surface matrix
+
+| Python API area | Required behavior in JS bridge mode | Status | Pass criteria | Fail criteria |
+| --- | --- | --- | --- | --- |
+| Generated package imports | Existing generated imports such as `from prisma import Prisma`, generated models, enums, partials, and type helpers import without user code changes. | Supported | Existing import smoke tests pass for async and sync clients generated from fixture schemas. | Any public import path removed, renamed, or requiring direct JS/TS imports. |
+| Client construction | `Prisma()` and generated client constructors keep current accepted arguments unless documented as legacy-only. | Supported | Constructor tests pass with default options, datasource override patterns that remain supported, and JS bridge opt-in flag. | Constructor requires adapter objects, Node paths, or JS Client objects from user code. |
+| Connect/disconnect lifecycle | `connect()`, `disconnect()`, async context manager, and sync wrapper semantics remain compatible while supervising the Node subprocess internally. | Supported | Repeated connect/disconnect and context-manager tests leave no bridge process running and map startup failures to Python exceptions. | Resource leak, double-connect behavior regression, or uncaught Node process failure. |
+| CRUD model actions | Generated model actions (`find_*`, `create`, `update`, `delete`, `upsert`, `count`, aggregates where currently exposed) retain Python signatures and return shapes. | Supported | Existing model-action suites pass against SQLite JS bridge fixtures. | Signature drift, relation payload shape drift, or requiring JS query objects. |
+| Filters/order/select/include | Python query builder inputs serialize to the bridge without API changes. | Supported | Golden serialization fixtures match for nested filters, order, pagination, `select`, and `include`. | Python accepts input but bridge emits malformed Prisma Client call or returns incompatible payload. |
+| Model hydration | Results hydrate into existing Python model classes, including relation payloads and unset/optional fields. | Supported | Golden result fixtures round-trip through Python deserialization and equality checks. | Raw JS objects leak through, relation fields disappear, or unset/null distinction changes silently. |
+| Scalar mapping | `Decimal`, `BigInt`, `DateTime`, `Json`, `Bytes`, enums, `None`, and list values preserve existing Python representations. | Supported | Serialization and deserialization fixtures pass for each scalar and nested relation payload. | Precision loss, timezone drift, bytes encoding mismatch, enum value mismatch, or JSON mutation. |
+| Raw query APIs | Existing raw query methods remain available only after query/result mapping and SQL injection safety behavior are documented. | Partial | Opt-in release either passes provider-specific raw-query fixtures or raises documented unsupported errors. | Raw queries silently change parameterization, return shapes, or transaction behavior. |
+| Batch transactions | Existing batch transaction API maps to Prisma Client transaction behavior with deterministic rollback on failure. | Supported | Batch transaction golden lifecycle fixtures pass for commit, rollback, timeout, and bridge death. | Partial commits after Python exception, lost transaction errors, or unpinned connection behavior where pinning is required. |
+| Interactive transactions | Preserve source-compatible `tx()` behavior through the bridge-hosted Prisma interactive transaction command loop. | Supported | Start/query/commit/rollback/timeout/cancellation/closed-ID fixtures pass for SQLite before preview and for each provider before it is marked supported. | Silent fallback, hanging transaction, root-client execution inside a transaction, or terminal transaction ID reuse. |
+| Nested transactions | No implicit nested interactive transaction support unless the transaction contract defines it. | Deferred | Nested attempts fail deterministically with documented exception, or pass explicit semantics tests if implemented later. | Deadlock, ambiguous commit/rollback, or untracked inner transaction IDs. |
+| Error classes | Existing Python exception classes remain the primary public surface; Prisma `code`, `meta`, and retryability may be attached. | Supported | Error mapping fixtures prove validation, known request, initialization, panic/process death, timeout, and cancellation mappings. | JS stack/error objects leak as untyped strings or established Python exception handlers stop working. |
+| Feature flag/default policy | Development flag is `PRISMA_PY_ENGINE=js-bridge\|rust-legacy`; initial default is legacy/explicit opt-in until parity gates pass. | Supported | Tests prove default selection, opt-in selection, invalid flag diagnostics, and no Rust engine spawn in JS bridge mode. | JS bridge becomes default before gates pass or unsupported configs silently choose it. |
+| Configuration/datasource overrides | Existing Python-side config behavior is preserved where it does not conflict with Prisma 7 `prisma.config.ts` datasource handling. | Partial | Supported override paths are documented and tested per provider. | Python config appears accepted but bridge uses a different datasource. |
+| Logging/debug hooks | Python logging hooks remain usable; Node stderr can be captured/forwarded without stdout protocol corruption. | Supported | Tests assert stdout contains only JSON protocol frames and stderr/log side channel carries diagnostics. | Logs interleave with JSON responses on stdout. |
+| Metrics/tracing | Existing metrics APIs are not required for first JS bridge opt-in unless they already gate release behavior. | Deferred | Unsupported metrics paths fail clearly or are documented as legacy-only. | Metrics silently report legacy engine values while JS bridge is active. |
+| CLI generation commands | Existing `prisma generate` workflows remain the user entrypoint while generator internals create the JS bridge project. | Supported | Fixture project generation produces Python client plus JS bridge project without manual JS calls. | User must hand-write bridge entrypoint or generated Prisma Client import paths. |
+| Packaging/runtime dependency diagnostics | Missing Node, missing npm packages, and missing generated JS Client output produce actionable Python errors. | Supported | Failure-mode tests cover missing Node, unsupported Node, missing `@prisma/client`, missing adapter, and missing generated output. | Process exits with opaque npm/Node stack only. |
+
+## Provider-dependent Python API gates
+
+| Gate | SQLite first release | PostgreSQL next path | MySQL/MariaDB next path | Default-flip requirement |
+| --- | --- | --- | --- | --- |
+| CRUD parity | Required. | Required before provider marked supported. | Required before provider marked supported. | SQLite required; at least one networked DB must be supported or explicitly deferred in release notes. |
+| Scalar parity | Required for all scalars supported by SQLite fixture schemas. | Required for provider-specific native mappings and JSON/Decimal behavior. | Required for provider-specific native mappings and Decimal/DateTime behavior. | Provider cannot be marked supported until scalar fixtures pass. |
+| Transactions | Batch and interactive transaction suites are required; nested transactions remain explicit fail-fast unless savepoint fixtures pass. | Batch and interactive required before provider support; connection-pinning semantics must be verified. | Batch and interactive required before provider support; adapter pool semantics must be verified. | Default flip blocked by any undocumented transaction divergence. |
+| Raw queries | Deferred unless provider-specific parameterization tests pass. | Partial until parameter/result fixtures pass. | Partial until parameter/result fixtures pass. | Raw-query behavior cannot silently differ from existing Python API. |
+| Migrate/introspection CLI | May remain delegated to Prisma CLI and existing Python CLI wrappers. | Same. | Same. | CLI smoke tests must prove JS bridge runtime does not break generation/setup. |
+
+## Default-flip pass/fail checklist
+
+The JS bridge may become the default only when every required item below is true:
+
+- [ ] Existing generated Python client imports are unchanged.
+- [ ] Async and sync client lifecycle tests pass in JS bridge mode.
+- [ ] CRUD, filter/order/select/include, model hydration, and scalar fixtures pass for SQLite.
+- [ ] Error mapping fixtures preserve Python exception classes where possible.
+- [ ] Batch and interactive transaction fixtures pass; nested transactions are either explicit fail-fast or have savepoint fixtures.
+- [ ] Missing Node/package/adapter/generated-output diagnostics are actionable from Python.
+- [ ] `PRISMA_PY_ENGINE=js-bridge` does not spawn the Rust query engine.
+- [ ] Unsupported or deferred APIs fail with documented Python exceptions, not silent fallback.
+- [ ] User code never imports or instantiates Prisma JS Client, driver adapters, or bridge internals directly.
+- [ ] Release notes list every partial/deferred/breaking behavior.
+
+## Reference anchors
+
+- Phase 0 PRD: `.omx/plans/prd-prisma7-js-bridge-migration.md`.
+- Phase 0 test spec: `.omx/plans/test-spec-prisma7-js-bridge-migration.md`.
+- Prisma driver adapters overview: <https://www.prisma.io/docs/orm/core-concepts/supported-databases/database-drivers>.
