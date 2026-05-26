@@ -1,0 +1,114 @@
+
+$ python3 -m json.tool .omx/proof-spikes/prisma7/versions.json
+{
+    "captured_at_utc": "2026-05-26T04:39:50Z",
+    "host": {
+        "os": "macOS-15.7.3-arm64-arm-64bit-Mach-O",
+        "architecture": "darwin/arm64"
+    },
+    "node": {
+        "command": "node --version",
+        "version": "v25.4.0"
+    },
+    "npm": {
+        "command": "npm --version",
+        "version": "11.7.0"
+    },
+    "python": {
+        "command": "python3 --version",
+        "version": "Python 3.14.4",
+        "executable": "/opt/homebrew/opt/python@3.14/bin/python3.14"
+    },
+    "prisma": {
+        "latest_command": "npm view prisma version --json",
+        "latest_version": "7.8.0",
+        "tested_command": "NPM_CONFIG_CACHE=$PWD/.omx/proof-spikes/prisma7/npm-cache npm exec --yes --package prisma@7.8.0 -- prisma --version",
+        "tested_version": "7.8.0",
+        "query_compiler": "enabled",
+        "schema_engine": "schema-engine-cli 3c6e192761c0362d496ed980de936e2f3cebcd3a",
+        "default_engines_hash": "3c6e192761c0362d496ed980de936e2f3cebcd3a",
+        "studio": "0.27.3"
+    },
+    "prisma_engines_version_package": {
+        "command": "npm view @prisma/engines-version version --json",
+        "version": "7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a",
+        "engine_hash": "3c6e192761c0362d496ed980de936e2f3cebcd3a"
+    },
+    "notes": [
+        "Prisma CLI reported @prisma/client: Not found because this version-only proof did not install a project-local @prisma/client package.",
+        "Prisma CLI reported TypeScript: unknown in the isolated npm exec environment.",
+        "The npm cache used to execute Prisma was removed after recording command output; see version-commands.log for the transcript."
+    ]
+}
+[exit 0]
+
+$ python3 -
+PASS: report and command log contain all required exact version evidence
+[exit 0]
+
+$ env NPM_CONFIG_CACHE=/Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-1/.omx/proof-spikes/prisma7/npm-cache-verify npm exec --yes --package prisma@7.8.0 -- prisma --version
+prisma               : 7.8.0
+@prisma/client       : Not found
+Operating System     : darwin
+Architecture         : arm64
+Node.js              : v25.4.0
+TypeScript           : unknown
+Query Compiler       : enabled
+PSL                  : @prisma/prisma-schema-wasm 7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a
+Schema Engine        : schema-engine-cli 3c6e192761c0362d496ed980de936e2f3cebcd3a (at .omx/proof-spikes/prisma7/npm-cache-verify/_npx/35bbd8b17918daaa/node_modules/@prisma/engines/schema-engine-darwin-arm64)
+Default Engines Hash : 3c6e192761c0362d496ed980de936e2f3cebcd3a
+Studio               : 0.27.3
+npm notice
+npm notice New minor version of npm available! 11.7.0 -> 11.15.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.15.0
+npm notice To update run: npm install -g npm@11.15.0
+npm notice
+[exit 0]
+
+$ env NPM_CONFIG_CACHE=/Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-1/.omx/proof-spikes/prisma7/npm-cache-mdlint npm exec --yes --package markdownlint-cli@0.45.0 -- markdownlint --disable MD013 .omx/proof-spikes/prisma7/report.md
+npm warn deprecated glob@11.0.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+Usage: markdownlint [options] [files|directories|globs...]
+
+MarkdownLint Command Line Interface
+
+Arguments:
+  files|directories|globs                    files, directories, and/or globs to lint
+
+Options:
+  -V, --version                              output the version number
+  -c, --config <configFile>                  configuration file (JSON, JSONC, JS, YAML, or TOML)
+  --configPointer <pointer>                  JSON Pointer to object within configuration file (default: "")
+  -d, --dot                                  include files/folders with a dot (for example `.github`)
+  -f, --fix                                  fix basic errors (does not work with STDIN)
+  -i, --ignore <file|directory|glob>         file(s) to ignore/exclude (default: [])
+  -j, --json                                 write issues in json format
+  -o, --output <outputFile>                  write issues to file (no console)
+  -p, --ignore-path <file>                   path to file with ignore pattern(s)
+  -q, --quiet                                do not write issues to STDOUT
+  -r, --rules <file|directory|glob|package>  include custom rule files (default: [])
+  -s, --stdin                                read from STDIN (does not work with files)
+  --enable <rules...>                        Enable certain rules, e.g. --enable MD013 MD041 --
+  --disable <rules...>                       Disable certain rules, e.g. --disable MD013 MD041 --
+  -h, --help                                 display help for command
+npm notice
+npm notice New minor version of npm available! 11.7.0 -> 11.15.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.15.0
+npm notice To update run: npm install -g npm@11.15.0
+npm notice
+[exit 0]
+
+$ git diff --check -- . :!.omx/proof-spikes/prisma7/verification-task1.log
+[exit 0]
+
+$ bash -lc git diff --name-only -- . ":!.omx/proof-spikes/prisma7" | grep -q . && { echo "Unexpected non-proof-spike tracked diff"; exit 1; } || { echo "PASS: no tracked source-code diffs outside .omx/proof-spikes/prisma7"; exit 0; }
+PASS: no tracked source-code diffs outside .omx/proof-spikes/prisma7
+[exit 0]
+
+$ env NPM_CONFIG_CACHE=/Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-1/.omx/proof-spikes/prisma7/npm-cache-mdlint npm exec --yes --package markdownlint-cli@0.45.0 -- markdownlint --disable MD013 -- .omx/proof-spikes/prisma7/report.md
+npm warn deprecated glob@11.0.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm notice
+npm notice New minor version of npm available! 11.7.0 -> 11.15.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.15.0
+npm notice To update run: npm install -g npm@11.15.0
+npm notice
+[exit 0]
