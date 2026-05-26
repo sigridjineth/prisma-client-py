@@ -1,0 +1,35 @@
+{
+  "name": "serialization",
+  "protocolVersion": "2026-05-26.phase0.v1",
+  "scenario": {
+    "description": "Special scalar and nested relation payloads use deterministic tagged JSON."
+  },
+  "values": {
+    "decimal": {"$type": "Decimal", "value": "1234567890.123456789"},
+    "bigInt": {"$type": "BigInt", "value": "9007199254740993"},
+    "dateTime": {"$type": "DateTime", "value": "2026-05-26T05:54:00.000Z"},
+    "bytes": {"$type": "Bytes", "encoding": "base64", "value": "AQIDBA=="},
+    "jsonObject": {"nested": [1, true, null, {"key": "value"}]},
+    "databaseJsonNull": {"$type": "JsonNull"},
+    "databaseDbNull": {"$type": "DbNull"},
+    "enum": "ADMIN",
+    "nullableField": null,
+    "relationPayload": {
+      "id": 1,
+      "posts": [
+        {"id": 10, "title": "Bridge contract", "published": true}
+      ]
+    },
+    "rawRows": [
+      {"count": {"$type": "BigInt", "value": "42"}, "max_created_at": {"$type": "DateTime", "value": "2026-05-26T05:54:00.000Z"}}
+    ]
+  },
+  "expectedPythonTypes": {
+    "decimal": "decimal.Decimal",
+    "bigInt": "int",
+    "dateTime": "datetime.datetime",
+    "bytes": "bytes",
+    "enum": "generated enum or str-compatible enum",
+    "nullableField": "None"
+  }
+}

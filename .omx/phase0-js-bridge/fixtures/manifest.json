@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": "2026-05-26.phase0.v1",
+  "generatedAt": "2026-05-26T00:00:00Z",
+  "scope": "phase0-docs-contracts-only",
+  "sourcePlans": [
+    ".omx/plans/prd-prisma7-js-bridge-migration.md",
+    ".omx/plans/test-spec-prisma7-js-bridge-migration.md",
+    ".omx/plans/team-handoff-prisma7-js-bridge-phase0.md",
+    ".omx/ultragoal/goals.json"
+  ],
+  "fixtures": [
+    "protocol-lifecycle.json",
+    "query-success.json",
+    "error-mapping.json",
+    "serialization.json",
+    "transaction-lifecycle.json"
+  ],
+  "validationRules": [
+    "Each request with id has a matching response id unless scenario.expectation is timeout_or_cancel.",
+    "Responses contain exactly one of result or error.",
+    "stdout entries are JSON protocol objects only.",
+    "Special scalars use tagged JSON values."
+  ]
+}
