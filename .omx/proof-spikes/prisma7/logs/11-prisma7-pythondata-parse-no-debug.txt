@@ -1,0 +1,8 @@
+$ .venv/bin/python parse Prisma 7 custom-probe params as PythonData without debug
+PARSE_FAILED ValidationError
+1 validation error for PythonData
+  Value error, Prisma Client Python expected Prisma version: 5fe21811a6ba0b952a3bc71400666511fe3b902f but got: 3c6e192761c0362d496ed980de936e2f3cebcd3a
+  If this is intentional, set the PRISMA_PY_DEBUG_GENERATOR environment variable to 1 and try again.
+  If you are using the Node CLI then you must switch to v5.19.0, e.g. npx prisma@5.19.0 generate
+  or generate the client using the Python CLI, e.g. python3 -m prisma generate [type=value_error, input_value={'datamodel': 'generator ..., 'allowNoModels': True}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error

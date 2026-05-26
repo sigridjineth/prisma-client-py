@@ -1,0 +1,59 @@
+$ npm install --cache ../npm-cache
+
+added 100 packages, and audited 101 packages in 7s
+
+14 packages are looking for funding
+  run `npm fund` for details
+
+3 moderate severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+$ npx prisma generate
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+
+✔ Generated Prisma Client (7.8.0) to ./generated/prisma in 11ms
+
+$ find generated -maxdepth 3 -type f | sort | sed -n "1,80p"
+generated/prisma/browser.ts
+generated/prisma/client.ts
+generated/prisma/commonInputTypes.ts
+generated/prisma/enums.ts
+generated/prisma/internal/class.ts
+generated/prisma/internal/prismaNamespace.ts
+generated/prisma/internal/prismaNamespaceBrowser.ts
+generated/prisma/models.ts
+generated/prisma/models/User.ts
+$ find generated -type f | rg "query-engine|libquery|schema-engine|\.node$|\.dylib"
+$ rg "@prisma|adapter|queryCompiler|engine|internal" generated/prisma -n --glob "*.ts" | sed -n "1,120p"
+generated/prisma/commonInputTypes.ts:12:import type * as runtime from "@prisma/client/runtime/client"
+generated/prisma/commonInputTypes.ts:14:import type * as Prisma from "./internal/prismaNamespace.ts"
+generated/prisma/client.ts:18:import * as runtime from "@prisma/client/runtime/client"
+generated/prisma/client.ts:20:import * as $Class from "./internal/class.ts"
+generated/prisma/client.ts:21:import * as Prisma from "./internal/prismaNamespace.ts"
+generated/prisma/client.ts:32: *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
+generated/prisma/browser.ts:16:import * as Prisma from './internal/prismaNamespaceBrowser.ts'
+generated/prisma/models/User.ts:11:import type * as runtime from "@prisma/client/runtime/client"
+generated/prisma/models/User.ts:13:import type * as Prisma from "../internal/prismaNamespace.ts"
+generated/prisma/internal/prismaNamespaceBrowser.ts:7: * WARNING: This is an internal file that is subject to change!
+generated/prisma/internal/prismaNamespaceBrowser.ts:18:import * as runtime from "@prisma/client/runtime/index-browser"
+generated/prisma/internal/prismaNamespace.ts:7: * WARNING: This is an internal file that is subject to change!
+generated/prisma/internal/prismaNamespace.ts:18:import * as runtime from "@prisma/client/runtime/client"
+generated/prisma/internal/prismaNamespace.ts:79:  engine: string
+generated/prisma/internal/prismaNamespace.ts:88:  engine: "3c6e192761c0362d496ed980de936e2f3cebcd3a"
+generated/prisma/internal/prismaNamespace.ts:580:   * Instance of a Driver Adapter, e.g., like one provided by `@prisma/adapter-pg`.
+generated/prisma/internal/prismaNamespace.ts:582:  adapter: runtime.SqlDriverAdapterFactory
+generated/prisma/internal/prismaNamespace.ts:589:  adapter?: never
+generated/prisma/internal/prismaNamespace.ts:652:   *   adapter,
+generated/prisma/internal/prismaNamespace.ts:670:   *   adapter,
+generated/prisma/internal/class.ts:7: * WARNING: This is an internal file that is subject to change!
+generated/prisma/internal/class.ts:14:import * as runtime from "@prisma/client/runtime/client"
+generated/prisma/internal/class.ts:21:  "engineVersion": "3c6e192761c0362d496ed980de936e2f3cebcd3a",
+generated/prisma/internal/class.ts:48:  getRuntime: async () => await import("@prisma/client/runtime/query_compiler_fast_bg.sqlite.mjs"),
+generated/prisma/internal/class.ts:51:    const { wasm } = await import("@prisma/client/runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs")
+generated/prisma/internal/class.ts:71:   *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
+generated/prisma/internal/class.ts:95: *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })

@@ -1,0 +1,14 @@
+generator probe {
+  provider = "node ./probe-generator.mjs"
+  output   = "./out"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id    Int     @id @default(autoincrement())
+  email String  @unique
+  name  String?
+}

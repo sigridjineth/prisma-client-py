@@ -1,0 +1,25 @@
+$ PRISMA_PY_DEBUG_GENERATOR=1 .venv/bin/python parse Prisma 7 custom-probe params as PythonData
+
+Some types are disabled by default due to being incompatible with Mypy, it is highly recommended
+to use Pyright instead and configure Prisma Python to use recursive types. To re-enable certain types:
+
+generator client {
+  provider             = "prisma-client-py"
+  recursive_type_depth = -1
+}
+
+If you need to use Mypy, you can also disable this message by explicitly setting the default value:
+
+generator client {
+  provider             = "prisma-client-py"
+  recursive_type_depth = 5
+}
+
+For more information see: https://prisma-client-py.readthedocs.io/en/stable/reference/limitations/#default-type-limitations
+
+
+PARSE_FAILED ValidationError
+1 validation error for PythonData
+datasources.0.url
+  Field required [type=missing, input_value={'name': 'db', 'provider'...e/prisma/schema.prisma'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/missing

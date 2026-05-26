@@ -1,0 +1,3 @@
+$ .venv/bin/python -m pip install -e ../../..
+Obtaining file:///Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-2/.omx
+ERROR: file:///Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-2/.omx does not appear to be a Python project: neither 'setup.py' nor 'pyproject.toml' found.
