@@ -1,0 +1,70 @@
+{
+  "name": "transaction-lifecycle",
+  "protocolVersion": "2026-05-26.phase0.v1",
+  "interactiveCommit": {
+    "requests": [
+      {
+        "id": "req_tx_start_1",
+        "method": "transaction.start",
+        "params": {"timeoutMs": 5000, "maxWaitMs": 2000, "isolationLevel": null},
+        "timeoutMs": 7000,
+        "clientVersion": "prisma-client-py/phase0"
+      },
+      {
+        "id": "req_tx_query_1",
+        "method": "query.execute",
+        "transactionId": "tx_phase0_commit",
+        "params": {"kind": "model", "model": "User", "action": "update", "args": {"where": {"id": 1}, "data": {"balance": {"decrement": 50}}}},
+        "timeoutMs": 30000,
+        "clientVersion": "prisma-client-py/phase0"
+      },
+      {
+        "id": "req_tx_commit_1",
+        "method": "transaction.commit",
+        "transactionId": "tx_phase0_commit",
+        "params": {},
+        "timeoutMs": 5000,
+        "clientVersion": "prisma-client-py/phase0"
+      }
+    ],
+    "responses": [
+      {"id": "req_tx_start_1", "result": {"transactionId": "tx_phase0_commit", "expiresAt": "2026-05-26T05:55:00.000Z"}, "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 4}},
+      {"id": "req_tx_query_1", "result": {"id": 1, "balance": {"$type": "Decimal", "value": "50"}}, "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 5}},
+      {"id": "req_tx_commit_1", "result": {"status": "committed"}, "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 3}}
+    ]
+  },
+  "interactiveRollbackOnPythonException": {
+    "requests": [
+      {"id": "req_tx_start_2", "method": "transaction.start", "params": {"timeoutMs": 5000, "maxWaitMs": 2000, "isolationLevel": null}, "timeoutMs": 7000, "clientVersion": "prisma-client-py/phase0"},
+      {"id": "req_tx_rollback_2", "method": "transaction.rollback", "transactionId": "tx_phase0_rollback", "params": {"reason": "python-exception"}, "timeoutMs": 5000, "clientVersion": "prisma-client-py/phase0"}
+    ],
+    "responses": [
+      {"id": "req_tx_start_2", "result": {"transactionId": "tx_phase0_rollback", "expiresAt": "2026-05-26T05:55:00.000Z"}, "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 4}},
+      {"id": "req_tx_rollback_2", "result": {"status": "rolled_back"}, "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 3}}
+    ]
+  },
+  "timeoutTaintsTransaction": {
+    "request": {"id": "req_tx_query_timeout", "method": "query.execute", "transactionId": "tx_phase0_timeout", "params": {"kind": "model", "model": "User", "action": "update", "args": {"where": {"id": 1}, "data": {"email": "late@example.com"}}}, "timeoutMs": 1, "clientVersion": "prisma-client-py/phase0"},
+    "response": {"id": "req_tx_query_timeout", "error": {"code": "BRIDGE_TIMEOUT", "message": "Bridge operation exceeded timeout.", "meta": {"transactionId": "tx_phase0_timeout", "tainted": true}, "prismaCode": null, "debug": {"stack": null, "stderrTail": null}, "retryable": false}, "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 1}}
+  },
+  "batchTransaction": {
+    "request": {
+      "id": "req_batch_1",
+      "method": "query.batch",
+      "params": {
+        "operations": [
+          {"kind": "model", "model": "User", "action": "create", "args": {"data": {"email": "batch@example.com"}}},
+          {"kind": "model", "model": "User", "action": "count", "args": {}}
+        ],
+        "isolationLevel": null
+      },
+      "timeoutMs": 30000,
+      "clientVersion": "prisma-client-py/phase0"
+    },
+    "response": {
+      "id": "req_batch_1",
+      "result": [{"id": 2, "email": "batch@example.com"}, 2],
+      "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 9}
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "query-success",
+  "protocolVersion": "2026-05-26.phase0.v1",
+  "scenario": {
+    "description": "A model findMany query returns rows that can hydrate generated Python models.",
+    "provider": "sqlite",
+    "adapter": "@prisma/adapter-better-sqlite3"
+  },
+  "request": {
+    "id": "req_query_1",
+    "method": "query.execute",
+    "params": {
+      "kind": "model",
+      "model": "User",
+      "action": "findMany",
+      "args": {
+        "where": {"email": {"contains": "@example.com"}},
+        "select": {"id": true, "email": true, "createdAt": true, "posts": {"select": {"id": true, "title": true}}}
+      },
+      "resultShape": "many"
+    },
+    "timeoutMs": 30000,
+    "clientVersion": "prisma-client-py/phase0"
+  },
+  "response": {
+    "id": "req_query_1",
+    "result": [
+      {
+        "id": 1,
+        "email": "alice@example.com",
+        "createdAt": {"$type": "DateTime", "value": "2026-05-26T05:54:00.000Z"},
+        "posts": [
+          {"id": 10, "title": "Bridge contract"}
+        ]
+      }
+    ],
+    "meta": {
+      "protocolVersion": "2026-05-26.phase0.v1",
+      "elapsedMs": 6,
+      "provider": "sqlite",
+      "adapter": "@prisma/adapter-better-sqlite3"
+    }
+  }
+}

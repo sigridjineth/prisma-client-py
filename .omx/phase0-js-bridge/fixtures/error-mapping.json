@@ -1,0 +1,59 @@
+{
+  "name": "error-mapping",
+  "protocolVersion": "2026-05-26.phase0.v1",
+  "scenarios": [
+    {
+      "description": "Prisma validation error preserves Prisma code and maps to a Python validation/client error.",
+      "request": {
+        "id": "req_err_validation_1",
+        "method": "query.execute",
+        "params": {"kind": "model", "model": "User", "action": "findUnique", "args": {"where": {}}},
+        "timeoutMs": 30000,
+        "clientVersion": "prisma-client-py/phase0"
+      },
+      "response": {
+        "id": "req_err_validation_1",
+        "error": {
+          "code": "PRISMA_VALIDATION_ERROR",
+          "message": "Invalid Prisma Client query arguments.",
+          "meta": {"model": "User", "action": "findUnique", "field": "where"},
+          "prismaCode": "P2009",
+          "debug": {"stack": "PrismaClientValidationError: ...", "stderrTail": null},
+          "retryable": false
+        },
+        "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 2}
+      }
+    },
+    {
+      "description": "Missing adapter package fails during startup with a stable bridge error.",
+      "request": {
+        "id": "req_connect_missing_adapter_1",
+        "method": "client.connect",
+        "params": {"datasource": null, "logQueries": false, "adapterOptions": {}},
+        "timeoutMs": 5000,
+        "clientVersion": "prisma-client-py/phase0"
+      },
+      "response": {
+        "id": "req_connect_missing_adapter_1",
+        "error": {
+          "code": "ADAPTER_NOT_FOUND",
+          "message": "Missing Prisma driver adapter package for provider sqlite.",
+          "meta": {"provider": "sqlite", "package": "@prisma/adapter-better-sqlite3", "install": "npm install @prisma/adapter-better-sqlite3 better-sqlite3"},
+          "prismaCode": null,
+          "debug": {"stack": null, "stderrTail": "Cannot find package '@prisma/adapter-better-sqlite3'"},
+          "retryable": false
+        },
+        "meta": {"protocolVersion": "2026-05-26.phase0.v1", "elapsedMs": 3}
+      }
+    },
+    {
+      "description": "Malformed stdout is classified as protocol error by Python.",
+      "stdoutLine": "Loaded Prisma Client in 42ms",
+      "expectedPythonError": {
+        "code": "BRIDGE_PROTOCOL_ERROR",
+        "message": "Bridge wrote non-protocol data to stdout.",
+        "retryable": false
+      }
+    }
+  ]
+}

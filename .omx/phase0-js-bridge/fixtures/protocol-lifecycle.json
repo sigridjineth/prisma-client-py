@@ -1,0 +1,96 @@
+{
+  "name": "protocol-lifecycle",
+  "protocolVersion": "2026-05-26.phase0.v1",
+  "stdout": [
+    {
+      "method": "bridge.ready",
+      "params": {
+        "protocolVersion": "2026-05-26.phase0.v1",
+        "pid": 12345,
+        "provider": "sqlite",
+        "adapter": "@prisma/adapter-better-sqlite3",
+        "prismaClientVersion": "7.8.0"
+      }
+    },
+    {
+      "id": "req_health_1",
+      "result": {
+        "status": "ok",
+        "databaseReachable": null,
+        "activeTransactions": 0
+      },
+      "meta": {
+        "protocolVersion": "2026-05-26.phase0.v1",
+        "elapsedMs": 1
+      }
+    },
+    {
+      "id": "req_connect_1",
+      "result": {
+        "status": "connected"
+      },
+      "meta": {
+        "protocolVersion": "2026-05-26.phase0.v1",
+        "elapsedMs": 8,
+        "provider": "sqlite",
+        "adapter": "@prisma/adapter-better-sqlite3"
+      }
+    },
+    {
+      "id": "req_disconnect_1",
+      "result": {
+        "status": "disconnected"
+      },
+      "meta": {
+        "protocolVersion": "2026-05-26.phase0.v1",
+        "elapsedMs": 3
+      }
+    },
+    {
+      "id": "req_shutdown_1",
+      "result": {
+        "status": "shutdown"
+      },
+      "meta": {
+        "protocolVersion": "2026-05-26.phase0.v1",
+        "elapsedMs": 2
+      }
+    }
+  ],
+  "stdin": [
+    {
+      "id": "req_health_1",
+      "method": "bridge.healthcheck",
+      "params": {"requireDatabase": false},
+      "timeoutMs": 1000,
+      "clientVersion": "prisma-client-py/phase0"
+    },
+    {
+      "id": "req_connect_1",
+      "method": "client.connect",
+      "params": {"datasource": null, "logQueries": false, "adapterOptions": {}},
+      "timeoutMs": 5000,
+      "clientVersion": "prisma-client-py/phase0"
+    },
+    {
+      "id": "req_disconnect_1",
+      "method": "client.disconnect",
+      "params": {},
+      "timeoutMs": 5000,
+      "clientVersion": "prisma-client-py/phase0"
+    },
+    {
+      "id": "req_shutdown_1",
+      "method": "bridge.shutdown",
+      "params": {},
+      "timeoutMs": 5000,
+      "clientVersion": "prisma-client-py/phase0"
+    }
+  ],
+  "stderr": [
+    {
+      "level": "debug",
+      "message": "generated bridge loaded Prisma Client"
+    }
+  ]
+}
