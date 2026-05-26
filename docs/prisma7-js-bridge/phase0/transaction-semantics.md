@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # Phase 0 Transaction Semantics and Failure Contract
 
 Status: Phase 0 contract, docs-only
