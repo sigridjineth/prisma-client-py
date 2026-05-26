@@ -9,6 +9,11 @@ from ._abstract import (
     SyncAbstractEngine as SyncAbstractEngine,
     AsyncAbstractEngine as AsyncAbstractEngine,
 )
+from ._js_bridge import (
+    SyncJSBridgeEngine as SyncJSBridgeEngine,
+    AsyncJSBridgeEngine as AsyncJSBridgeEngine,
+    get_engine_mode as get_engine_mode,
+)
 
 try:
     from .query import *  # noqa: TID251

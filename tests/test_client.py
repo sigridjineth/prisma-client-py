@@ -10,10 +10,12 @@ from pytest_mock import MockerFixture
 
 from prisma import ENGINE_TYPE, SCHEMA_PATH, Prisma, errors, get_client
 from prisma.types import HttpConfig
+from prisma.utils import temp_env_update
+from prisma.engine import AsyncQueryEngine, AsyncJSBridgeEngine
 from prisma.testing import reset_client
 from prisma.cli.prisma import run
 from prisma.engine.http import HTTPEngine
-from prisma.engine.errors import AlreadyConnectedError
+from prisma.engine.errors import AlreadyConnectedError, InvalidEngineModeError
 from prisma.http_abstract import DEFAULT_CONFIG
 
 from .utils import Testdir, patch_method
@@ -91,6 +93,20 @@ def test_auto_register() -> None:
 def test_engine_type() -> None:
     """The exported ENGINE_TYPE enum matches the actual engine type"""
     assert ENGINE_TYPE.value == 'binary'
+
+
+def test_engine_selection_env_flag() -> None:
+    client = Prisma()
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'rust-legacy'}):
+        assert client._engine_class is AsyncQueryEngine
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge'}):
+        assert client._engine_class is AsyncJSBridgeEngine
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'invalid'}):
+        with pytest.raises(InvalidEngineModeError):
+            client._create_engine()
 
 
 @pytest.mark.asyncio

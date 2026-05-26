@@ -1,0 +1,24 @@
+{
+  "name": "prisma-client-py-js-bridge",
+  "version": "0.0.0-generated",
+  "private": true,
+  "type": "module",
+  "description": "Generated Prisma Client Python Node stdio bridge for PostgreSQL.",
+  "main": "./runtime.mjs",
+  "scripts": {
+    "start": "node ./runtime.mjs",
+    "check": "node --check ./runtime.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "{{ js_bridge.prisma_version }}",
+    "@prisma/adapter-pg": "{{ js_bridge.prisma_version }}",
+    "pg": "{{ js_bridge.driver_version }}"
+  },
+  "prismaClientPython": {
+    "provider": "{{ js_bridge.provider }}",
+    "supportLevel": "{{ js_bridge.support_level }}",
+    "protocolVersion": "{{ js_bridge.protocol_version }}",
+    "prismaVersion": "{{ js_bridge.prisma_version }}",
+    "runtime": "./runtime.mjs"
+  }
+}

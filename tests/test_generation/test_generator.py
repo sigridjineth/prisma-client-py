@@ -1,4 +1,5 @@
 import sys
+import json
 import subprocess
 from typing import cast
 from pathlib import Path
@@ -166,3 +167,96 @@ def test_schema_path_same_path(testdir: Testdir) -> None:
     proc = testdir.generate(output='.')
     assert proc.returncode == 0
     assert 'Generated Prisma Client Python' in proc.stdout.decode('utf-8')
+
+
+def test_js_bridge_package_generated_for_postgresql(
+    testdir: Testdir,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PRISMA_PY_ENGINE=js-bridge emits a private PostgreSQL Node bridge package."""
+    monkeypatch.setenv('PRISMA_PY_ENGINE', 'js-bridge')
+    schema = """
+    datasource db {{
+      provider = "postgresql"
+      url      = "postgresql://postgres:prisma@localhost:5432/prisma"
+    }}
+
+    generator db {{
+      provider = "{python} -m prisma"
+      output = "{output}"
+      {options}
+    }}
+
+    model User {{
+      id    String @id @default(cuid())
+      email String @unique
+    }}
+    """
+
+    testdir.generate(schema=schema, python=sys.executable)
+
+    bridge = testdir.path / 'prisma' / 'js_bridge'
+    package_json = json.loads(bridge.joinpath('package.json').read_text())
+    bridge_config = json.loads(bridge.joinpath('bridge.config.json').read_text())
+
+    assert bridge.joinpath('runtime.mjs').exists()
+    assert bridge.joinpath('README.md').read_text().startswith('# Prisma Client Python JS bridge package')
+    assert package_json['private'] is True
+    assert package_json['type'] == 'module'
+    assert package_json['dependencies'] == {
+        '@prisma/client': '7.8.0',
+        '@prisma/adapter-pg': '7.8.0',
+        'pg': '8.21.0',
+    }
+    assert package_json['prismaClientPython'] == {
+        'provider': 'postgresql',
+        'supportLevel': 'First',
+        'protocolVersion': '2026-05-26.phase0.v1',
+        'prismaVersion': '7.8.0',
+        'runtime': './runtime.mjs',
+    }
+    assert bridge_config['prismaVersion'] == '7.8.0'
+    assert bridge_config['adapterPackage'] == '@prisma/adapter-pg'
+    assert bridge_config['driverPackage'] == 'pg'
+    assert bridge_config['driverVersion'] == '8.21.0'
+    assert bridge_config['deferredProviders']['sqlite']['support_level'] == 'Deferred'
+
+    # Python public generated surface remains present; the bridge package is private sidecar output.
+    assert (testdir.path / 'prisma' / 'client.py').exists()
+    assert (testdir.path / 'prisma' / 'models.py').exists()
+
+
+def test_js_bridge_deferred_provider_diagnostic(
+    testdir: Testdir,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deferred providers fail early with an actionable JS bridge diagnostic."""
+    monkeypatch.setenv('PRISMA_PY_ENGINE', 'js-bridge')
+
+    schema = """
+    datasource db {{
+      provider = "sqlite"
+      url      = "file:dev.db"
+    }}
+
+    generator db {{
+      provider = "{python} -m prisma"
+      output = "{output}"
+      {options}
+    }}
+
+    model User {{
+      id    String @id @default(cuid())
+      email String @unique
+    }}
+    """
+
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        testdir.generate(schema=schema, python=sys.executable)
+
+    output = exc.value.output.decode('utf-8')
+    assert 'PROVIDER_DEFERRED: PRISMA_PY_ENGINE=js-bridge currently supports only PostgreSQL.' in output
+    assert "Provider 'sqlite' is Deferred." in output
+    assert 'Required adapter package when enabled: @prisma/adapter-better-sqlite3.' in output
+    assert 'Use PRISMA_PY_ENGINE=rust-legacy while this provider is deferred.' in output
+    assert 'docs/prisma7-js-bridge/phase0/adapter-support-matrix.md' in output

@@ -49,7 +49,15 @@ setup(
     ),
     package_dir={'': 'src'},
     python_requires='>=3.8.0',
-    package_data={'': ['generator/templates/**/*.py.jinja', 'py.typed']},
+    package_data={
+        '': [
+            'generator/templates/**/*.py.jinja',
+            'generator/templates/**/*.json.jinja',
+            'generator/templates/**/*.md.jinja',
+            'generator/templates/**/*.mjs',
+            'py.typed',
+        ]
+    },
     include_package_data=True,
     zip_safe=False,
     extras_require={

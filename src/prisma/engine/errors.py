@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 from ..errors import PrismaError
@@ -6,6 +8,8 @@ from ..http_abstract import AbstractResponse
 __all__ = (
     'EngineError',
     'BinaryNotFoundError',
+    'InvalidEngineModeError',
+    'JSBridgeError',
     'MismatchedVersionsError',
     'EngineConnectionError',
     'EngineRequestError',
@@ -24,6 +28,36 @@ class EngineError(PrismaError):
 
 class BinaryNotFoundError(EngineError):
     pass
+
+
+class InvalidEngineModeError(EngineError):
+    value: str
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+        super().__init__(f'Unsupported PRISMA_PY_ENGINE value: {value}. Expected one of: js-bridge, rust-legacy.')
+
+
+class JSBridgeError(EngineError):
+    code: str
+    meta: dict[str, Any]
+    prisma_code: str | None
+    retryable: bool
+
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        meta: dict[str, Any] | None = None,
+        prisma_code: str | None = None,
+        retryable: bool = False,
+    ) -> None:
+        self.code = code
+        self.meta = meta or {}
+        self.prisma_code = prisma_code
+        self.retryable = retryable
+        super().__init__(f'{code}: {message}')
 
 
 class AlreadyConnectedError(EngineError):

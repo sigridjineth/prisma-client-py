@@ -1,8 +1,10 @@
 import signal
 import asyncio
 import contextlib
-from typing import Iterator, Optional
+from io import StringIO
+from typing import Dict, List, Optional, Generator
 from pathlib import Path
+from datetime import timedelta
 
 import pytest
 from pytest_subprocess import FakeProcess
@@ -14,12 +16,17 @@ from prisma.engine import utils, errors
 from prisma._compat import get_running_loop
 from prisma.binaries import platform
 from prisma.engine.query import QueryEngine
+from prisma.engine._js_bridge import (
+    SyncJSBridgeEngine,
+    deserialize_bridge_value,
+    bridge_raw_rows_to_legacy_result,
+)
 
 from .utils import Testdir, skipif_windows
 
 
 @contextlib.contextmanager
-def no_event_loop() -> Iterator[None]:
+def no_event_loop() -> Generator[None, None, None]:
     try:
         current: Optional[asyncio.AbstractEventLoop] = get_running_loop()
     except RuntimeError:
@@ -84,6 +91,111 @@ def test_stopping_engine_on_closed_loop() -> None:
     with no_event_loop():
         engine = QueryEngine(dml_path=Path.cwd())
         engine.stop()
+
+
+class FakeJSBridgeProcess:
+    def __init__(self) -> None:
+        self.stdin = StringIO()
+        self.stdout = StringIO(
+            '\n'.join(
+                [
+                    '{"method":"bridge.ready","params":{"protocolVersion":"2026-05-26.phase0.v1","provider":"postgresql"}}',
+                    '{"id":"req_connect_1","result":{"status":"connected"},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}',
+                    '{"id":"req_disconnect_2","result":{"status":"disconnected"},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}',
+                    '{"id":"req_shutdown_3","result":{"status":"shutdown"},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}',
+                ]
+            )
+            + '\n'
+        )
+        self.stderr = StringIO()
+        self.returncode: Optional[int] = None
+        self.args: Optional[List[str]] = None
+        self.env: Optional[Dict[str, str]] = None
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> Optional[int]:
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.returncode = 0
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = -9
+
+    def wait(self, timeout: Optional[float] = None) -> int:  # noqa: ARG002
+        self.returncode = 0
+        return 0
+
+
+def test_js_bridge_does_not_spawn_rust_binary(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    bridge = tmp_path / 'bridge.mjs'
+    bridge.write_text('process.exit(0)')
+    fake_process = FakeJSBridgeProcess()
+
+    def popen(args: list[str], **kwargs: object) -> FakeJSBridgeProcess:
+        fake_process.args = args
+        fake_process.env = kwargs.get('env')  # type: ignore[assignment]
+        return fake_process
+
+    def ensure(*args: object, **kwargs: object) -> None:
+        raise AssertionError('Rust query engine binary resolution should not run in JS bridge mode')
+
+    monkeypatch.setattr('prisma.engine._js_bridge.subprocess.Popen', popen)
+    monkeypatch.setattr(utils, 'ensure', ensure)
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge', 'PRISMA_PY_JS_BRIDGE_SCRIPT': str(bridge)}):
+        engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+        engine.connect(timeout=timedelta(seconds=1))
+        engine.close(timeout=timedelta(seconds=1))
+
+    assert fake_process.args is not None
+    assert 'prisma-query-engine' not in ' '.join(fake_process.args)
+    assert fake_process.env is not None
+    assert fake_process.env['PRISMA_PY_BRIDGE_PROVIDER'] == 'postgresql'
+    assert 'PRISMA_QUERY_ENGINE_BINARY' not in fake_process.env
+    written = fake_process.stdin.getvalue()
+    assert '"method": "client.connect"' in written
+    assert '"method": "client.disconnect"' in written
+    assert '"method": "bridge.shutdown"' in written
+
+
+def test_js_bridge_default_script_matches_generated_package(tmp_path: Path) -> None:
+    generated = tmp_path / 'js_bridge'
+    generated.mkdir()
+    runtime = generated / 'runtime.mjs'
+    runtime.write_text('process.exit(0)')
+
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+
+    assert engine._bridge_script() == runtime
+
+
+def test_js_bridge_scalar_deserialization() -> None:
+    assert str(deserialize_bridge_value({'$type': 'Decimal', 'value': '123.45'})) == '123.45'
+    assert deserialize_bridge_value({'$type': 'BigInt', 'value': '9007199254740993'}) == 9007199254740993
+    assert deserialize_bridge_value({'$type': 'Bytes', 'encoding': 'base64', 'value': 'AQID'}) == b'\x01\x02\x03'
+    assert deserialize_bridge_value({'$type': 'DateTime', 'value': '2026-05-26T05:54:00.000Z'}).tzinfo is not None
+    assert deserialize_bridge_value({'nested': [{'$type': 'JsonNull'}]}) == {'nested': [None]}
+
+
+def test_js_bridge_raw_rows_to_legacy_result() -> None:
+    result = bridge_raw_rows_to_legacy_result(
+        [
+            {
+                'count': {'$type': 'BigInt', 'value': '42'},
+                'max_created_at': {'$type': 'DateTime', 'value': '2026-05-26T05:54:00.000Z'},
+            }
+        ]
+    )
+
+    assert result == {
+        'columns': ['count', 'max_created_at'],
+        'types': ['bigint', 'datetime'],
+        'rows': [['42', '2026-05-26T05:54:00.000Z']],
+    }
 
 
 def test_engine_binary_does_not_exist(monkeypatch: MonkeyPatch) -> None:

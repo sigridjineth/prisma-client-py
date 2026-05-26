@@ -1,0 +1,34 @@
+# Prisma Client Python JS bridge package
+
+This directory is generated for `PRISMA_PY_ENGINE=js-bridge` and is private to
+Prisma Client Python. User code should keep importing and calling the generated
+Python client; it should not import this Node package directly.
+
+## PostgreSQL first
+
+The current generated bridge package is enabled only for self-hosted PostgreSQL:
+
+- Prisma datasource provider: `{{ js_bridge.provider }}`
+- Prisma Client / adapter version: `{{ js_bridge.prisma_version }}`
+- Prisma adapter package: `{{ js_bridge.adapter_package }}`
+- Driver package: `{{ js_bridge.driver_package }}@{{ js_bridge.driver_version }}`
+- Protocol version: `{{ js_bridge.protocol_version }}`
+
+Install the generated package dependencies from this directory before starting
+the bridge runtime:
+
+```bash
+npm install
+npm run check
+npm start
+```
+
+## Deferred providers
+
+SQLite, MySQL/MariaDB, MongoDB, and unrecognized providers are intentionally not
+enabled for this first bridge lane. If `PRISMA_PY_ENGINE=js-bridge` is selected
+for a deferred provider, generation fails with a `PROVIDER_DEFERRED` diagnostic
+that points back to the Phase 0 adapter support matrix.
+
+Use `PRISMA_PY_ENGINE=rust-legacy` for the existing Rust engine lane while those
+providers remain deferred.

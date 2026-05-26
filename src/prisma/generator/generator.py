@@ -27,6 +27,7 @@ from .._types import BaseModelT, InheritsGeneric, get_args
 from .filters import quote
 from .jsonrpc import Manifest
 from .._compat import model_json, model_parse, cached_property
+from .._config import config as prisma_config
 
 __all__ = (
     'BASE_PACKAGE_DIR',
@@ -44,6 +45,33 @@ GENERIC_GENERATOR_NAME = 'prisma.generator.generator.GenericGenerator'
 
 # set of templates that should be rendered after every other template
 DEFERRED_TEMPLATES = {'partials.py.jinja'}
+JS_BRIDGE_PROTOCOL_VERSION = '2026-05-26.phase0.v1'
+JS_BRIDGE_ENGINE_ENV = 'PRISMA_PY_ENGINE'
+JS_BRIDGE_PRISMA_VERSION = '7.8.0'
+JS_BRIDGE_PG_VERSION = '8.21.0'
+JS_BRIDGE_TEMPLATES = (
+    'js_bridge/runtime.mjs',
+    'js_bridge/package.json.jinja',
+    'js_bridge/bridge.config.json.jinja',
+    'js_bridge/README.md.jinja',
+)
+JS_BRIDGE_DEFERRED_PROVIDERS = {
+    'sqlite': {
+        'support_level': 'Deferred',
+        'adapter_package': '@prisma/adapter-better-sqlite3',
+        'message': 'SQLite JS bridge support is deferred until provider-specific fixtures pass.',
+    },
+    'mysql': {
+        'support_level': 'Deferred',
+        'adapter_package': '@prisma/adapter-mariadb',
+        'message': 'MySQL/MariaDB JS bridge support is deferred until provider-specific fixtures pass.',
+    },
+    'mongodb': {
+        'support_level': 'Unsupported',
+        'adapter_package': None,
+        'message': 'MongoDB is not approved for JS bridge mode in the Phase 1 PostgreSQL lane.',
+    },
+}
 
 DEFAULT_ENV = Environment(
     trim_blocks=True,
@@ -57,7 +85,7 @@ DEFAULT_ENV = Environment(
 # results in an overly restrictive type
 DEFAULT_ENV.filters['quote'] = quote  # pyright: ignore
 
-partial_models_ctx: ContextVar[List[PartialModel]] = ContextVar('partial_models_ctx', default=[])
+partial_models_ctx: ContextVar[List[PartialModel]] = ContextVar('partial_models_ctx', default=[])  # noqa: B039
 
 
 class GenericGenerator(ABC, Generic[BaseModelT]):
@@ -256,11 +284,69 @@ class Generator(GenericGenerator[PythonData]):
             params['partial_models'] = partial_models_ctx.get()
             for name in DEFERRED_TEMPLATES:
                 render_template(rootdir, name, params)
+
+            generate_js_bridge_package(rootdir, data=data, params=params)
         except:
             cleanup_templates(rootdir, env=DEFAULT_ENV)
             raise
 
         log.debug('Finished generating Prisma Client Python')
+
+
+def generate_js_bridge_package(rootdir: Path, *, data: PythonData, params: Dict[str, Any]) -> None:
+    """Generate the project-local Node bridge package when explicitly requested.
+
+    The first implementation lane is intentionally PostgreSQL-only. Existing
+    Python client generation remains the default unless the Phase 1
+    ``PRISMA_PY_ENGINE=js-bridge`` flag is set.
+    """
+
+    engine = os.environ.get(JS_BRIDGE_ENGINE_ENV, '').strip().lower()
+    if engine in {'', 'rust-legacy'}:
+        return
+
+    if engine != 'js-bridge':
+        raise ValueError(f'Invalid {JS_BRIDGE_ENGINE_ENV} value: {engine!r}; expected "js-bridge" or "rust-legacy".')
+
+    datasource = data.datasources[0]
+    provider = datasource.active_provider
+    if provider != 'postgresql':
+        raise ValueError(_deferred_provider_message(provider))
+
+    bridge_params = dict(params)
+    bridge_params['js_bridge'] = {
+        'protocol_version': JS_BRIDGE_PROTOCOL_VERSION,
+        'provider': provider,
+        'support_level': 'First',
+        'adapter_package': '@prisma/adapter-pg',
+        'driver_package': 'pg',
+        'prisma_version': JS_BRIDGE_PRISMA_VERSION,
+        'driver_version': JS_BRIDGE_PG_VERSION,
+        'legacy_prisma_version': prisma_config.prisma_version,
+        'deferred_providers_json': json.dumps(JS_BRIDGE_DEFERRED_PROVIDERS, indent=2, sort_keys=True),
+    }
+
+    for template in JS_BRIDGE_TEMPLATES:
+        render_template(rootdir, template, bridge_params)
+
+
+def _deferred_provider_message(provider: str) -> str:
+    details = JS_BRIDGE_DEFERRED_PROVIDERS.get(
+        provider,
+        {
+            'support_level': 'Unsupported',
+            'adapter_package': None,
+            'message': 'This datasource provider is not approved for JS bridge mode.',
+        },
+    )
+    package = details['adapter_package']
+    package_text = f' Required adapter package when enabled: {package}.' if package else ''
+    return (
+        f'PROVIDER_DEFERRED: PRISMA_PY_ENGINE=js-bridge currently supports only PostgreSQL. '
+        f'Provider {provider!r} is {details["support_level"]}. {details["message"]}'
+        f'{package_text} Use PRISMA_PY_ENGINE=rust-legacy while this provider is deferred. '
+        'See docs/prisma7-js-bridge/phase0/adapter-support-matrix.md.'
+    )
 
 
 def cleanup_templates(rootdir: Path, *, env: Optional[Environment] = None) -> None:

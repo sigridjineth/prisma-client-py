@@ -16,7 +16,9 @@ from .engine import (
     AsyncQueryEngine,
     BaseAbstractEngine,
     SyncAbstractEngine,
+    SyncJSBridgeEngine,
     AsyncAbstractEngine,
+    AsyncJSBridgeEngine,
 )
 from .errors import ClientNotConnectedError, ClientNotRegisteredError
 from ._compat import model_parse, removeprefix
@@ -24,8 +26,29 @@ from ._builder import QueryBuilder
 from ._metrics import Metrics
 from ._registry import get_client
 from .generator.models import EngineType
+from .engine._js_bridge import get_engine_mode, deserialize_bridge_value, bridge_raw_rows_to_legacy_result
 
 log: logging.Logger = logging.getLogger(__name__)
+
+_JS_BRIDGE_ACTION_MAPPING: dict[PrismaMethod, str] = {
+    'create': 'create',
+    'delete': 'delete',
+    'update': 'update',
+    'upsert': 'upsert',
+    'query_raw': 'queryRaw',
+    'query_first': 'queryRaw',
+    'create_many': 'createMany',
+    'execute_raw': 'executeRaw',
+    'delete_many': 'deleteMany',
+    'update_many': 'updateMany',
+    'count': 'count',
+    'group_by': 'groupBy',
+    'find_many': 'findMany',
+    'find_first': 'findFirst',
+    'find_first_or_raise': 'findFirstOrThrow',
+    'find_unique': 'findUnique',
+    'find_unique_or_raise': 'findUniqueOrThrow',
+}
 
 
 class UseClientDefault:
@@ -303,6 +326,57 @@ class BasePrisma(Generic[_EngineT]):
             relational_field_mappings=self._relational_field_mappings,
         )
 
+    def _make_js_bridge_operation(self, builder: QueryBuilder) -> dict[str, Any]:
+        if builder.method in {'query_raw', 'query_first'}:
+            return {
+                'method': 'query.raw',
+                'params': {
+                    'action': 'queryRaw',
+                    'sql': builder.arguments.get('query'),
+                    'parameters': list(builder.arguments.get('parameters', ())),
+                    'resultShape': 'rows',
+                },
+            }
+
+        if builder.method == 'execute_raw':
+            return {
+                'method': 'query.raw',
+                'params': {
+                    'action': 'executeRaw',
+                    'sql': builder.arguments.get('query'),
+                    'parameters': list(builder.arguments.get('parameters', ())),
+                    'resultShape': 'count',
+                },
+            }
+
+        model = builder.model
+        if model is None:
+            raise RuntimeError(f'Cannot build a JS bridge model operation for {builder.method!r} without a model.')
+
+        result_shape = 'one'
+        if builder.method in {'find_many', 'group_by'}:
+            result_shape = 'many'
+        elif builder.method == 'count':
+            result_shape = 'scalar'
+
+        action = _JS_BRIDGE_ACTION_MAPPING[builder.method]
+        params: dict[str, Any] = {
+            'kind': 'model',
+            'model': model.__prisma_model__,
+            'action': action,
+            'args': builder.arguments,
+            'resultShape': result_shape,
+        }
+        if builder.include is not None:
+            params['args'] = {**builder.arguments, 'include': builder.include}
+        if builder.root_selection is not None:
+            params['rootSelection'] = builder.root_selection
+
+        return {
+            'method': 'query.execute',
+            'params': params,
+        }
+
 
 class SyncBasePrisma(BasePrisma[SyncAbstractEngine]):
     __slots__ = ()
@@ -393,6 +467,13 @@ class SyncBasePrisma(BasePrisma[SyncAbstractEngine]):
         return model_parse(Metrics, response)
 
     def _create_engine(self, dml_path: Path | None = None) -> SyncAbstractEngine:
+        if get_engine_mode() == 'js-bridge':
+            return SyncJSBridgeEngine(
+                dml_path=dml_path or self._packaged_schema_path,
+                provider=self._active_provider,
+                log_queries=self._log_queries,
+            )
+
         if self._engine_type == EngineType.binary:
             return SyncQueryEngine(
                 dml_path=dml_path or self._packaged_schema_path,
@@ -404,6 +485,9 @@ class SyncBasePrisma(BasePrisma[SyncAbstractEngine]):
 
     @property
     def _engine_class(self) -> type[SyncAbstractEngine]:
+        if get_engine_mode() == 'js-bridge':
+            return SyncJSBridgeEngine
+
         if self._engine_type == EngineType.binary:
             return SyncQueryEngine
 
@@ -420,6 +504,17 @@ class SyncBasePrisma(BasePrisma[SyncAbstractEngine]):
         builder = self._make_query_builder(
             method=method, model=model, arguments=arguments, root_selection=root_selection
         )
+        if isinstance(self._engine, SyncJSBridgeEngine):
+            result = self._engine.query_operation(
+                operation=self._make_js_bridge_operation(builder),
+                tx_id=self._tx_id,
+            )
+            if method in {'query_raw', 'query_first'} and isinstance(result, list):
+                result = bridge_raw_rows_to_legacy_result(result)
+            elif method != 'execute_raw':
+                result = deserialize_bridge_value(result)
+            return {'data': {'result': result}}
+
         return self._engine.query(builder.build(), tx_id=self._tx_id)
 
 
@@ -512,6 +607,13 @@ class AsyncBasePrisma(BasePrisma[AsyncAbstractEngine]):
         return model_parse(Metrics, response)
 
     def _create_engine(self, dml_path: Path | None = None) -> AsyncAbstractEngine:
+        if get_engine_mode() == 'js-bridge':
+            return AsyncJSBridgeEngine(
+                dml_path=dml_path or self._packaged_schema_path,
+                provider=self._active_provider,
+                log_queries=self._log_queries,
+            )
+
         if self._engine_type == EngineType.binary:
             return AsyncQueryEngine(
                 dml_path=dml_path or self._packaged_schema_path,
@@ -523,6 +625,9 @@ class AsyncBasePrisma(BasePrisma[AsyncAbstractEngine]):
 
     @property
     def _engine_class(self) -> type[AsyncAbstractEngine]:
+        if get_engine_mode() == 'js-bridge':
+            return AsyncJSBridgeEngine
+
         if self._engine_type == EngineType.binary:
             return AsyncQueryEngine
 
@@ -540,4 +645,15 @@ class AsyncBasePrisma(BasePrisma[AsyncAbstractEngine]):
         builder = self._make_query_builder(
             method=method, model=model, arguments=arguments, root_selection=root_selection
         )
+        if isinstance(self._engine, AsyncJSBridgeEngine):
+            result = await self._engine.aquery_operation(
+                operation=self._make_js_bridge_operation(builder),
+                tx_id=self._tx_id,
+            )
+            if method in {'query_raw', 'query_first'} and isinstance(result, list):
+                result = bridge_raw_rows_to_legacy_result(result)
+            elif method != 'execute_raw':
+                result = deserialize_bridge_value(result)
+            return {'data': {'result': result}}
+
         return await self._engine.query(builder.build(), tx_id=self._tx_id)

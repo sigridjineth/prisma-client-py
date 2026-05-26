@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import base64
+import decimal
+import datetime
 from typing import Any, Callable, overload
 from typing_extensions import Literal
 
@@ -169,8 +172,19 @@ def _deserialize_bigint(value: str, _for_model: bool) -> int:
     return int(value)
 
 
-def _deserialize_decimal(value: str, _for_model: bool) -> float:
-    return float(value)
+def _deserialize_decimal(value: str, _for_model: bool) -> decimal.Decimal:
+    return decimal.Decimal(value)
+
+
+def _deserialize_datetime(value: str, _for_model: bool) -> datetime.datetime:
+    if value.endswith('Z'):
+        value = f'{value[:-1]}+00:00'
+
+    return datetime.datetime.fromisoformat(value)
+
+
+def _deserialize_bytes(value: str, _for_model: bool) -> bytes:
+    return base64.b64decode(value)
 
 
 def _deserialize_json(value: object, for_model: bool) -> object:
@@ -189,6 +203,8 @@ def _deserialize_json(value: object, for_model: bool) -> object:
 
 DESERIALIZERS: dict[PrismaType, Callable[[Any, bool], object]] = {
     'bigint': _deserialize_bigint,
+    'bytes': _deserialize_bytes,
     'decimal': _deserialize_decimal,
+    'datetime': _deserialize_datetime,
     'json': _deserialize_json,
 }

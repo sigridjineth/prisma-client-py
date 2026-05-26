@@ -1,0 +1,18 @@
+{
+  "protocolVersion": "{{ js_bridge.protocol_version }}",
+  "provider": "{{ js_bridge.provider }}",
+  "supportLevel": "{{ js_bridge.support_level }}",
+  "prismaVersion": "{{ js_bridge.prisma_version }}",
+  "adapterPackage": "{{ js_bridge.adapter_package }}",
+  "driverPackage": "{{ js_bridge.driver_package }}",
+  "driverVersion": "{{ js_bridge.driver_version }}",
+  "runtime": "./runtime.mjs",
+  "clientModule": "@prisma/client",
+  "environment": {
+    "provider": "PRISMA_PY_BRIDGE_PROVIDER",
+    "adapter": "PRISMA_PY_BRIDGE_ADAPTER",
+    "clientModule": "PRISMA_PY_BRIDGE_CLIENT_MODULE",
+    "adapterModule": "PRISMA_PY_BRIDGE_ADAPTER_MODULE"
+  },
+  "deferredProviders": {{ js_bridge.deferred_providers_json }}
+}
