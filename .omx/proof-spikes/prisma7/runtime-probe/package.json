@@ -1,0 +1,8 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "prisma": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "tsx": "latest"
+  }
+}

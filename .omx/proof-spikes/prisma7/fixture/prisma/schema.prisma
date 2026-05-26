@@ -1,0 +1,14 @@
+generator client {
+  provider = "./.venv/bin/python ./py-generator.py"
+  output   = "./generated/prisma-py"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id    Int     @id @default(autoincrement())
+  email String  @unique
+  name  String?
+}

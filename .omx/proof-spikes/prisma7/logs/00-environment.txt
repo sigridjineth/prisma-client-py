@@ -1,0 +1,22 @@
+## Environment snapshot
+$ node --version
+v25.4.0
+$ npm --version
+11.7.0
+$ python --version
+$ git rev-parse --short HEAD
+f2d1d7e
+$ npm view prisma version engines --json
+{
+  "version": "7.8.0",
+  "engines": {
+    "node": "^20.19 || ^22.12 || >=24.0"
+  }
+}
+$ npm view @prisma/client version engines --json
+{
+  "version": "7.8.0",
+  "engines": {
+    "node": "^20.19 || ^22.12 || >=24.0"
+  }
+}

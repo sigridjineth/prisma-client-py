@@ -1,0 +1,7 @@
+$ npx prisma generate (line-protocol custom probe)
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+
+✔ Generated probe-generator to ./prisma/out in 2ms
+

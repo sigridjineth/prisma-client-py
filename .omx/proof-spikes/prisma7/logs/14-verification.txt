@@ -1,0 +1,49 @@
+$ test -s REPORT.md and grep gate classifications
+| A1 generator compatibility | **Blocked / release blocker** | Current Python generator does not generate under Prisma 7.8.0. Prisma 7 rejects the generator manifest's `requiresEngines: ["queryEngine"]`; a custom probe then shows Prisma 7 generator params no longer match this repo's required data shape (`binaryPaths: null`, datasource has no `url` under Prisma config, version hash differs). |
+| A2 direct runtime compatibility | **Blocked => JS bridge mandatory/default** | The repo's supported runtime is a Python HTTP client over a Rust `query-engine` sidecar. Prisma 7 default generated client is Rust-binary-free TypeScript query compiler + driver adapter. No public supported Python direct-runtime boundary was proven; passing A2 would require relying on generated `internal/*` TypeScript files explicitly marked private. |
+| Recommended next plan | **Option B JS runtime bridge first; v5/v6 fallback if scope is too broad** | Build a Node/JS bridge around the public Prisma Client 7 API and driver adapters, or stay on the v5/v6 Rust-engine maintenance line. Do not attempt a direct Python query-compiler integration from private generated internals. |
+1. **Default plan: Option B JS runtime bridge.**
+## Minimum release-blocking test matrix (Task 7)
+PASS report sections present
+$ python3 -m json.tool custom-probe/probe-generate-params.json
+PASS Prisma 7 probe params JSON valid
+$ node --check custom-probe/probe-generator.mjs
+PASS JS custom probe syntax valid
+$ python3 -m py_compile fixture/py-generator.py
+PASS Python fixture syntax valid
+$ find proof spike for heavyweight dirs
+PASS heavyweight npm/venv caches removed
+$ git diff --stat -- . :(exclude).omx/proof-spikes/prisma7
+PASS no tracked source diff outside proof spike
+$ du -sh proof spike
+496K	.omx/proof-spikes/prisma7
+$ post-cleanup proof spike file list
+.omx/proof-spikes/prisma7/REPORT.md
+.omx/proof-spikes/prisma7/custom-probe/package.json
+.omx/proof-spikes/prisma7/custom-probe/prisma.config.ts
+.omx/proof-spikes/prisma7/custom-probe/prisma/schema.prisma
+.omx/proof-spikes/prisma7/custom-probe/probe-generate-params.json
+.omx/proof-spikes/prisma7/custom-probe/probe-generator.mjs
+.omx/proof-spikes/prisma7/fixture/package.json
+.omx/proof-spikes/prisma7/fixture/prisma.config.ts
+.omx/proof-spikes/prisma7/fixture/prisma/schema.prisma
+.omx/proof-spikes/prisma7/fixture/py-generator.py
+.omx/proof-spikes/prisma7/logs/00-environment.txt
+.omx/proof-spikes/prisma7/logs/01-npm-install.txt
+.omx/proof-spikes/prisma7/logs/02-pip-install-editable.txt
+.omx/proof-spikes/prisma7/logs/03-npm-install-local-cache.txt
+.omx/proof-spikes/prisma7/logs/04-pip-install-editable-corrected.txt
+.omx/proof-spikes/prisma7/logs/05-prisma7-python-generator-generate.txt
+.omx/proof-spikes/prisma7/logs/09-prisma7-custom-probe-line-protocol.txt
+.omx/proof-spikes/prisma7/logs/10-prisma7-custom-probe-params-shape.txt
+.omx/proof-spikes/prisma7/logs/11-prisma7-pythondata-parse-no-debug.txt
+.omx/proof-spikes/prisma7/logs/12-prisma7-pythondata-parse-debug.txt
+.omx/proof-spikes/prisma7/logs/13-prisma7-runtime-probe-generate-default.txt
+.omx/proof-spikes/prisma7/logs/14-verification.txt
+.omx/proof-spikes/prisma7/runtime-probe/package.json
+.omx/proof-spikes/prisma7/runtime-probe/prisma.config.ts
+.omx/proof-spikes/prisma7/runtime-probe/prisma/schema.prisma
+$ find proof spike for heavyweight dirs after cleanup
+PASS no heavyweight/cache dirs remain
+$ du -sh proof spike after cleanup
+300K	.omx/proof-spikes/prisma7

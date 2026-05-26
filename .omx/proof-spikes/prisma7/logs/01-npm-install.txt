@@ -1,0 +1,10 @@
+$ npm install
+npm error code EEXIST
+npm error syscall mkdir
+npm error path /Users/sigridjineth/.npm/_cacache/content-v2/sha512/e7/6a
+npm error errno EEXIST
+npm error Invalid response body while trying to fetch https://registry.npmjs.org/@prisma%2fquery-plan-executor: EACCES: permission denied, mkdir '/Users/sigridjineth/.npm/_cacache/content-v2/sha512/e7/6a'
+npm error File exists: /Users/sigridjineth/.npm/_cacache/content-v2/sha512/e7/6a
+npm error Remove the existing file and try again, or run npm
+npm error with --force to overwrite files recklessly.
+npm error A complete log of this run can be found in: /Users/sigridjineth/.npm/_logs/2026-05-26T04_42_58_404Z-debug-0.log

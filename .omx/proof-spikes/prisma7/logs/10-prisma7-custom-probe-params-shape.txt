@@ -1,0 +1,17 @@
+$ python inspect probe-generate-params.json
+params_exists True
+top_keys= ['allowNoModels', 'datamodel', 'datasources', 'dmmf', 'generator', 'otherGenerators', 'schemaPath', 'version']
+version= 3c6e192761c0362d496ed980de936e2f3cebcd3a
+generator_keys= ['binaryTargets', 'config', 'isCustomOutput', 'name', 'output', 'previewFeatures', 'provider', 'sourceFilePath']
+generator_name= probe
+generator_output= {'value': '/Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-2/.omx/proof-spikes/prisma7/custom-probe/prisma/out', 'fromEnvVar': None}
+generator_provider= {'fromEnvVar': None, 'value': 'node ./probe-generator.mjs'}
+generator_binaryTargets= [{'fromEnvVar': None, 'value': 'darwin-arm64', 'native': True}]
+generator_previewFeatures= []
+generator_config= {}
+binaryPaths= None
+datasources= [{'name': 'db', 'provider': 'sqlite', 'activeProvider': 'sqlite', 'schemas': [], 'sourceFilePath': '/Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-2/.omx/proof-spikes/prisma7/custom-probe/prisma/schema.prisma'}]
+dmmf_keys= ['datamodel', 'mappings', 'schema']
+datamodel_keys= ['enums', 'indexes', 'models', 'types']
+model0_keys= ['dbName', 'fields', 'isGenerated', 'name', 'primaryKey', 'schema', 'uniqueFields', 'uniqueIndexes']
+model0= {'name': 'User', 'dbName': None, 'schema': None, 'fields': [{'name': 'id', 'kind': 'scalar', 'isList': False, 'isRequired': True, 'isUnique': False, 'isId': True, 'isReadOnly': False, 'hasDefaultValue': True, 'type': 'Int', 'nativeType': None, 'default': {'name': 'autoincrement', 'args': []}, 'isGenerated': False, 'isUpdatedAt': False}, {'name': 'email', 'kind': 'scalar', 'isList': False, 'isRequired': True, 'isUnique': True, 'isId': False, 'isReadOnly': False, 'hasDefaultValue': False, 'type': 'String', 'nativeType': None, 'isGenerated': False, 'isUpdatedAt': False}, {'name': 'name', 'kind': 'scalar', 'isList': False, 'isRequired': False, 'isUnique': False, 'isId': False, 'isReadOnly': False, 'hasDefaultValue': False, 'type': 'String', 'nativeType': None, 'isGenerated': False, 'isUpdatedAt': False}], 'primaryKey': None, 'uniqueFields': [], 'uniqueIndexes': [], 'isGenerated': False}

@@ -1,0 +1,71 @@
+$ .venv/bin/python -m pip install -e ../../../..
+Obtaining file:///Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-2
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Collecting httpx>=0.19.0 (from prisma==0.15.0)
+  Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting jinja2>=2.11.2 (from prisma==0.15.0)
+  Downloading jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+Collecting pydantic<3,>=1.10.0 (from prisma==0.15.0)
+  Downloading pydantic-2.13.4-py3-none-any.whl.metadata (109 kB)
+Collecting click>=7.1.2 (from prisma==0.15.0)
+  Downloading click-8.4.1-py3-none-any.whl.metadata (2.6 kB)
+Collecting python-dotenv>=0.12.0 (from prisma==0.15.0)
+  Downloading python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+Collecting typing-extensions>=4.5.0 (from prisma==0.15.0)
+  Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting tomlkit (from prisma==0.15.0)
+  Downloading tomlkit-0.15.0-py3-none-any.whl.metadata (2.8 kB)
+Collecting nodeenv (from prisma==0.15.0)
+  Downloading nodeenv-1.10.0-py2.py3-none-any.whl.metadata (24 kB)
+Collecting annotated-types>=0.6.0 (from pydantic<3,>=1.10.0->prisma==0.15.0)
+  Downloading annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.46.4 (from pydantic<3,>=1.10.0->prisma==0.15.0)
+  Downloading pydantic_core-2.46.4-cp314-cp314-macosx_11_0_arm64.whl.metadata (6.6 kB)
+Collecting typing-inspection>=0.4.2 (from pydantic<3,>=1.10.0->prisma==0.15.0)
+  Downloading typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+Collecting anyio (from httpx>=0.19.0->prisma==0.15.0)
+  Downloading anyio-4.13.0-py3-none-any.whl.metadata (4.5 kB)
+Collecting certifi (from httpx>=0.19.0->prisma==0.15.0)
+  Downloading certifi-2026.5.20-py3-none-any.whl.metadata (2.5 kB)
+Collecting httpcore==1.* (from httpx>=0.19.0->prisma==0.15.0)
+  Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Collecting idna (from httpx>=0.19.0->prisma==0.15.0)
+  Downloading idna-3.16-py3-none-any.whl.metadata (6.4 kB)
+Collecting h11>=0.16 (from httpcore==1.*->httpx>=0.19.0->prisma==0.15.0)
+  Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Collecting MarkupSafe>=2.0 (from jinja2>=2.11.2->prisma==0.15.0)
+  Downloading markupsafe-3.0.3-cp314-cp314-macosx_11_0_arm64.whl.metadata (2.7 kB)
+Downloading pydantic-2.13.4-py3-none-any.whl (472 kB)
+Downloading pydantic_core-2.46.4-cp314-cp314-macosx_11_0_arm64.whl (2.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 27.4 MB/s  0:00:00
+Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Downloading click-8.4.1-py3-none-any.whl (116 kB)
+Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+Downloading markupsafe-3.0.3-cp314-cp314-macosx_11_0_arm64.whl (12 kB)
+Downloading python_dotenv-1.2.2-py3-none-any.whl (22 kB)
+Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+Downloading anyio-4.13.0-py3-none-any.whl (114 kB)
+Downloading idna-3.16-py3-none-any.whl (74 kB)
+Downloading certifi-2026.5.20-py3-none-any.whl (134 kB)
+Downloading nodeenv-1.10.0-py2.py3-none-any.whl (23 kB)
+Downloading tomlkit-0.15.0-py3-none-any.whl (41 kB)
+Building wheels for collected packages: prisma
+  Building editable for prisma (pyproject.toml): started
+  Building editable for prisma (pyproject.toml): finished with status 'done'
+  Created wheel for prisma: filename=prisma-0.15.0-0.editable-py3-none-any.whl size=11862 sha256=46dae156ef3272058bca3236f42ab4849d637ae209e8f209bf253a208c47c840
+  Stored in directory: /private/var/folders/0w/mpqh0kj972594cqpzyflyzhw0000gn/T/pip-ephem-wheel-cache-fewh1eca/wheels/71/d6/36/92a28106baf7b22635a339592580ef622c7cdfee4585069053
+Successfully built prisma
+Installing collected packages: typing-extensions, tomlkit, python-dotenv, nodeenv, MarkupSafe, idna, h11, click, certifi, annotated-types, typing-inspection, pydantic-core, jinja2, httpcore, anyio, pydantic, httpx, prisma
+
+Successfully installed MarkupSafe-3.0.3 annotated-types-0.7.0 anyio-4.13.0 certifi-2026.5.20 click-8.4.1 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.16 jinja2-3.1.6 nodeenv-1.10.0 prisma-0.15.0 pydantic-2.13.4 pydantic-core-2.46.4 python-dotenv-1.2.2 tomlkit-0.15.0 typing-extensions-4.15.0 typing-inspection-0.4.2
