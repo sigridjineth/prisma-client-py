@@ -1,0 +1,44 @@
+
+$ node --version
+v25.4.0
+[exit 0]
+
+$ npm --version
+11.7.0
+[exit 0]
+
+$ python3 --version
+Python 3.14.4
+[exit 0]
+
+$ python3 -c import sys, platform; print(sys.executable); print(platform.platform())
+/opt/homebrew/opt/python@3.14/bin/python3.14
+macOS-15.7.3-arm64-arm-64bit-Mach-O
+[exit 0]
+
+$ npm view prisma version --json
+"7.8.0"
+[exit 0]
+
+$ npm view @prisma/engines-version version --json
+"7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a"
+[exit 0]
+
+$ env NPM_CONFIG_CACHE=/Users/sigridjineth/Desktop/work/prisma-client-py/.omx/team/approved-ralplan-hand-d84b6947/worktrees/worker-1/.omx/proof-spikes/prisma7/npm-cache npm exec --yes --package prisma@7.8.0 -- prisma --version
+prisma               : 7.8.0
+@prisma/client       : Not found
+Operating System     : darwin
+Architecture         : arm64
+Node.js              : v25.4.0
+TypeScript           : unknown
+Query Compiler       : enabled
+PSL                  : @prisma/prisma-schema-wasm 7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a
+Schema Engine        : schema-engine-cli 3c6e192761c0362d496ed980de936e2f3cebcd3a (at .omx/proof-spikes/prisma7/npm-cache/_npx/35bbd8b17918daaa/node_modules/@prisma/engines/schema-engine-darwin-arm64)
+Default Engines Hash : 3c6e192761c0362d496ed980de936e2f3cebcd3a
+Studio               : 0.27.3
+npm notice
+npm notice New minor version of npm available! 11.7.0 -> 11.15.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.15.0
+npm notice To update run: npm install -g npm@11.15.0
+npm notice
+[exit 0]

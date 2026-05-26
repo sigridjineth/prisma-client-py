@@ -1,0 +1,40 @@
+{
+  "captured_at_utc": "2026-05-26T04:39:50Z",
+  "host": {
+    "os": "macOS-15.7.3-arm64-arm-64bit-Mach-O",
+    "architecture": "darwin/arm64"
+  },
+  "node": {
+    "command": "node --version",
+    "version": "v25.4.0"
+  },
+  "npm": {
+    "command": "npm --version",
+    "version": "11.7.0"
+  },
+  "python": {
+    "command": "python3 --version",
+    "version": "Python 3.14.4",
+    "executable": "/opt/homebrew/opt/python@3.14/bin/python3.14"
+  },
+  "prisma": {
+    "latest_command": "npm view prisma version --json",
+    "latest_version": "7.8.0",
+    "tested_command": "NPM_CONFIG_CACHE=$PWD/.omx/proof-spikes/prisma7/npm-cache npm exec --yes --package prisma@7.8.0 -- prisma --version",
+    "tested_version": "7.8.0",
+    "query_compiler": "enabled",
+    "schema_engine": "schema-engine-cli 3c6e192761c0362d496ed980de936e2f3cebcd3a",
+    "default_engines_hash": "3c6e192761c0362d496ed980de936e2f3cebcd3a",
+    "studio": "0.27.3"
+  },
+  "prisma_engines_version_package": {
+    "command": "npm view @prisma/engines-version version --json",
+    "version": "7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a",
+    "engine_hash": "3c6e192761c0362d496ed980de936e2f3cebcd3a"
+  },
+  "notes": [
+    "Prisma CLI reported @prisma/client: Not found because this version-only proof did not install a project-local @prisma/client package.",
+    "Prisma CLI reported TypeScript: unknown in the isolated npm exec environment.",
+    "The npm cache used to execute Prisma was removed after recording command output; see version-commands.log for the transcript."
+  ]
+}
