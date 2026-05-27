@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 from typing_extensions import Literal, override
 
 from . import utils, errors
-from .. import fields
+from .. import errors as prisma_errors, fields
 from .._types import TransactionId
 from .._compat import get_running_loop
 from .._builder import dumps, serialize_datetime
@@ -212,22 +212,38 @@ def _readline_with_timeout(stream: IO[str], timeout: timedelta) -> str:
 
 def _bridge_error_to_exception(data: dict[str, Any]) -> Exception:
     message = str(data.get('message') or 'An error occurred while communicating with the JS bridge.')
-    meta = data.get('meta') if isinstance(data.get('meta'), dict) else {}
+    raw_meta = data.get('meta')
+    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
     prisma_code = data.get('prismaCode')
     retryable = bool(data.get('retryable', False))
 
     if isinstance(prisma_code, str):
-        error_cls = utils.ERROR_MAPPING.get(prisma_code)
+        user_facing_error = {
+            'user_facing_error': {
+                'error_code': prisma_code,
+                'message': message,
+                'meta': meta,
+            }
+        }
+
+        if prisma_code == 'P2028':
+            if message.startswith('Transaction already closed'):
+                return prisma_errors.TransactionExpiredError(message)
+            return prisma_errors.TransactionError(message)
+
+        if 'A value is required but not set' in message:
+            return prisma_errors.MissingRequiredValueError(user_facing_error)
+
+        error_cls: type[Exception] | None = None
+        kind = meta.get('kind')
+        if kind is not None:
+            error_cls = utils.META_ERROR_MAPPING.get(kind)
+
+        if error_cls is None:
+            error_cls = utils.ERROR_MAPPING.get(prisma_code)
+
         if error_cls is not None:
-            return error_cls(
-                {
-                    'user_facing_error': {
-                        'error_code': prisma_code,
-                        'message': message,
-                        'meta': meta,
-                    }
-                }
-            )
+            return error_cls(user_facing_error)
 
     return errors.JSBridgeError(
         code=str(data.get('code') or 'BRIDGE_ERROR'),

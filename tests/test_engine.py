@@ -11,7 +11,7 @@ import pytest
 from pytest_subprocess import FakeProcess
 from _pytest.monkeypatch import MonkeyPatch
 
-from prisma import BINARY_PATHS, Prisma, config, fields
+from prisma import BINARY_PATHS, Prisma, config, errors as prisma_errors, fields
 from prisma.utils import temp_env_update
 from prisma.engine import utils, errors
 from prisma._compat import get_running_loop
@@ -22,6 +22,7 @@ from prisma.engine._js_bridge import (
     get_engine_mode,
     serialize_bridge_value,
     deserialize_bridge_value,
+    _bridge_error_to_exception,
     bridge_raw_rows_to_legacy_result,
 )
 
@@ -285,6 +286,81 @@ def test_js_bridge_deferred_provider_fails_before_node_spawn(monkeypatch: Monkey
 
     assert exc.value.code == 'PROVIDER_UNSUPPORTED'
     assert exc.value.meta == {'provider': 'sqlite', 'supported': ['postgresql']}
+
+
+def test_js_bridge_error_mapping_matches_known_prisma_errors() -> None:
+    exc = _bridge_error_to_exception(
+        {
+            'code': 'PRISMA_KNOWN_REQUEST_ERROR',
+            'message': 'Unique constraint failed on the fields: (`email`)',
+            'meta': {'target': ['email']},
+            'prismaCode': 'P2002',
+        }
+    )
+
+    assert isinstance(exc, prisma_errors.UniqueViolationError)
+    assert exc.code == 'P2002'
+    assert exc.meta == {'target': ['email']}
+
+
+def test_js_bridge_error_mapping_uses_meta_kind_for_field_errors() -> None:
+    exc = _bridge_error_to_exception(
+        {
+            'code': 'PRISMA_VALIDATION_ERROR',
+            'message': 'Unknown argument `emali`.',
+            'meta': {'kind': 'UnknownArgument', 'argumentPath': ['where', 'emali'], 'selectionPath': ['user']},
+            'prismaCode': 'P2009',
+        }
+    )
+
+    assert isinstance(exc, prisma_errors.FieldNotFoundError)
+
+
+def test_js_bridge_error_mapping_preserves_required_value_and_transaction_errors() -> None:
+    missing = _bridge_error_to_exception(
+        {
+            'code': 'PRISMA_VALIDATION_ERROR',
+            'message': 'A value is required but not set',
+            'meta': {'field': 'email'},
+            'prismaCode': 'P2009',
+        }
+    )
+    expired = _bridge_error_to_exception(
+        {
+            'code': 'PRISMA_KNOWN_REQUEST_ERROR',
+            'message': 'Transaction already closed: timeout',
+            'meta': {},
+            'prismaCode': 'P2028',
+        }
+    )
+    generic = _bridge_error_to_exception(
+        {
+            'code': 'PRISMA_KNOWN_REQUEST_ERROR',
+            'message': 'Transaction API error',
+            'meta': {},
+            'prismaCode': 'P2028',
+        }
+    )
+
+    assert isinstance(missing, prisma_errors.MissingRequiredValueError)
+    assert missing.code == 'P2009'
+    assert isinstance(expired, prisma_errors.TransactionExpiredError)
+    assert isinstance(generic, prisma_errors.TransactionError)
+
+
+def test_js_bridge_error_mapping_keeps_bridge_failures_as_js_bridge_errors() -> None:
+    exc = _bridge_error_to_exception(
+        {
+            'code': 'BRIDGE_PROTOCOL_ERROR',
+            'message': 'bad bridge frame',
+            'meta': {'field': 'id'},
+            'retryable': False,
+        }
+    )
+
+    assert isinstance(exc, errors.JSBridgeError)
+    assert exc.code == 'BRIDGE_PROTOCOL_ERROR'
+    assert exc.meta == {'field': 'id'}
 
 
 def test_js_bridge_scalar_deserialization() -> None:
