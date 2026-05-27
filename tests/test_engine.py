@@ -1,11 +1,13 @@
 import signal
 import asyncio
 import decimal
+import threading
 import contextlib
 from io import StringIO
-from typing import Dict, List, Optional, Generator
+from typing import Any, Dict, List, Optional, Generator, cast
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from typing_extensions import override
 
 import pytest
 from pytest_subprocess import FakeProcess
@@ -148,6 +150,46 @@ class FakeJSBridgeProcess:
     def wait(self, timeout: Optional[float] = None) -> int:  # noqa: ARG002
         self.returncode = 0
         return 0
+
+
+class BlockingJSBridgeStdout(StringIO):
+    def __init__(self, line: str) -> None:
+        super().__init__(line)
+        self._release = threading.Event()
+
+    @override
+    def readline(self, size: int = -1, /) -> str:
+        self._release.wait(timeout=5)
+        return super().readline(size)
+
+    def release(self) -> None:
+        self._release.set()
+
+
+class TimeoutJSBridgeProcess(FakeJSBridgeProcess):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stdout = BlockingJSBridgeStdout(
+            '{"id":"req_query_1","result":{"late":true},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}\n'
+        )
+
+
+def test_js_bridge_request_timeout_closes_process_before_late_response(tmp_path: Path) -> None:
+    process = TimeoutJSBridgeProcess()
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, process)  # bypass connect; this test targets request timeout cleanup only
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._request('query.graphql', {}, timeout_ms=1, request_id_prefix='req_query')
+
+    process.stdout.release()
+
+    assert exc.value.code == 'BRIDGE_TIMEOUT'
+    assert process.terminated is True
+    assert engine.process is None
+
+    with pytest.raises(errors.NotConnectedError):
+        engine._request('bridge.healthcheck', {}, timeout_ms=1, request_id_prefix='req_health')
 
 
 def test_js_bridge_does_not_spawn_rust_binary(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:

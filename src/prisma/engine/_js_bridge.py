@@ -50,6 +50,7 @@ JS_BRIDGE_PROTOCOL_VERSION = '2026-05-26.phase0.v1'
 _DEFAULT_ENGINE_MODE = 'rust-legacy'
 _VALID_ENGINE_MODES = frozenset({_DEFAULT_ENGINE_MODE, 'js-bridge'})
 _DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+_TIMED_OUT_REQUEST_CLOSE_TIMEOUT = timedelta(seconds=1)
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -493,7 +494,13 @@ class BaseJSBridgeEngine:
         self._write_request(request)
 
         while True:
-            data = self._read_stdout(timedelta(milliseconds=timeout_ms))
+            try:
+                data = self._read_stdout(timedelta(milliseconds=timeout_ms))
+            except errors.JSBridgeError as exc:
+                if exc.code == 'BRIDGE_TIMEOUT':
+                    self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
+                raise
+
             if data.get('method') == 'bridge.ready':
                 continue
 
