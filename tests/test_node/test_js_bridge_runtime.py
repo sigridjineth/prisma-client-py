@@ -289,6 +289,62 @@ def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules
         )
         assert _read_json_line(proc)['result'] == {'status': 'rolled_back'}
 
+        _send(
+            proc,
+            {
+                'id': 'req_tx_start_3',
+                'method': 'transaction.start',
+                'params': {'timeoutMs': 5000, 'maxWaitMs': 1000, 'isolationLevel': None},
+                'timeoutMs': 1000,
+            },
+        )
+        disconnect_tx_id = _read_json_line(proc)['result']['transactionId']
+
+        _send(
+            proc,
+            {
+                'id': 'req_health_tx_3',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result']['activeTransactions'] == 1
+
+        _send(
+            proc,
+            {
+                'id': 'req_disconnect_tx_1',
+                'method': 'client.disconnect',
+                'params': {'rollbackOpenTransactions': True},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'disconnected'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_health_tx_4',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result']['activeTransactions'] == 0
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_closed_after_disconnect_1',
+                'method': 'query.execute',
+                'transactionId': disconnect_tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['error']['code'] == 'TRANSACTION_CLOSED'
+
         _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
         assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
         assert proc.wait(timeout=5) == 0

@@ -85,6 +85,7 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
             sys.path.insert(0, '.')
 
             from prisma import Prisma
+            from prisma.engine.errors import JSBridgeError
 
             db = Prisma()
             db.connect()
@@ -108,6 +109,21 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
 
                 rolled_back = db.user.find_unique(where={'email': 'rollback@example.com'})
 
+                tx_closed_error = None
+                with db.tx() as closed_tx:
+                    closed_tx.user.create(data={'email': 'closed@example.com', 'name': 'Closed'})
+                try:
+                    closed_tx.user.count()
+                except JSBridgeError as exc:
+                    tx_closed_error = exc.code
+
+                disconnect_manager = db.tx()
+                disconnect_tx = disconnect_manager.start()
+                disconnect_tx.user.create(data={'email': 'disconnect@example.com', 'name': 'Disconnect'})
+                db.disconnect()
+                db.connect()
+                disconnect_rolled_back = db.user.find_unique(where={'email': 'disconnect@example.com'}) is None
+
                 print(
                     json.dumps(
                         {
@@ -116,12 +132,15 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
                             'count': count,
                             'tx_committed': committed.email if committed else None,
                             'tx_rolled_back': rolled_back is None,
+                            'tx_closed_error': tx_closed_error,
+                            'disconnect_rolled_back': disconnect_rolled_back,
                         },
                         sort_keys=True,
                     )
                 )
             finally:
-                db.disconnect()
+                if db.is_connected():
+                    db.disconnect()
             """
         ).strip()
     )
@@ -132,6 +151,8 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
         'count': 1,
         'created': 'alice@example.com',
         'found': 'alice@example.com',
+        'tx_closed_error': 'TRANSACTION_CLOSED',
         'tx_committed': 'commit@example.com',
         'tx_rolled_back': True,
+        'disconnect_rolled_back': True,
     }
