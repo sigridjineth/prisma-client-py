@@ -85,6 +85,7 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
             sys.path.insert(0, '.')
 
             from prisma import Prisma
+            from prisma import errors
             from prisma.engine.errors import JSBridgeError
 
             db = Prisma()
@@ -100,6 +101,26 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
                     batch.user.create(data={'email': 'batch-2@example.com', 'name': 'Batch 2'})
 
                 batch_count = db.user.count()
+
+                batch_failure_code = None
+                batch_failure_operation_index = None
+                batch_failure_rollback_outcome = None
+                try:
+                    with db.batch_() as batch:
+                        batch.user.create(
+                            data={'email': 'batch-rolled-back@example.com', 'name': 'Rolled back batch'}
+                        )
+                        batch.user.create(data={'email': 'alice@example.com', 'name': 'Duplicate Alice'})
+                except errors.UniqueViolationError as exc:
+                    batch_failure_code = exc.code
+                    batch_failure_operation_index = exc.meta.get('operationIndex')
+                    batch_failure_rollback_outcome = exc.meta.get('rollbackOutcome')
+                else:
+                    raise AssertionError('expected duplicate email in db.batch_() to fail')
+
+                batch_failure_rolled_back = (
+                    db.user.find_unique(where={'email': 'batch-rolled-back@example.com'}) is None
+                )
 
                 with db.tx() as tx:
                     tx.user.create(data={'email': 'commit@example.com', 'name': 'Committed'})
@@ -137,6 +158,10 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
                             'found': found.email,
                             'count': count,
                             'batch_count': batch_count,
+                            'batch_failure_code': batch_failure_code,
+                            'batch_failure_operation_index': batch_failure_operation_index,
+                            'batch_failure_rollback_outcome': batch_failure_rollback_outcome,
+                            'batch_failure_rolled_back': batch_failure_rolled_back,
                             'tx_committed': committed.email if committed else None,
                             'tx_rolled_back': rolled_back is None,
                             'tx_closed_error': tx_closed_error,
@@ -157,6 +182,10 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
     assert payload == {
         'count': 1,
         'batch_count': 3,
+        'batch_failure_code': 'P2002',
+        'batch_failure_operation_index': 1,
+        'batch_failure_rollback_outcome': 'confirmed',
+        'batch_failure_rolled_back': True,
         'created': 'alice@example.com',
         'found': 'alice@example.com',
         'tx_closed_error': 'TRANSACTION_CLOSED',
