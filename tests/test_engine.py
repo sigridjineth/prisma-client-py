@@ -227,6 +227,33 @@ def test_js_bridge_request_timeout_closes_process_before_late_response(tmp_path:
         engine._request('bridge.healthcheck', {}, timeout_ms=1, request_id_prefix='req_health')
 
 
+def test_js_bridge_request_total_deadline_ignores_stray_ready_frames(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    process = FakeJSBridgeProcess()
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, process)  # bypass connect; patched I/O targets request deadline behavior only
+    monotonic_values = iter([100.0, 100.0, 100.002])
+    read_timeouts: list[timedelta] = []
+
+    def read_stdout(timeout: timedelta) -> dict[str, Any]:
+        read_timeouts.append(timeout)
+        return {'method': 'bridge.ready'}
+
+    monkeypatch.setattr('prisma.engine._js_bridge.time.monotonic', lambda: next(monotonic_values))
+    monkeypatch.setattr(engine, '_read_stdout', read_stdout)
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._request('query.graphql', {}, timeout_ms=1, request_id_prefix='req_query')
+
+    assert exc.value.code == 'BRIDGE_TIMEOUT'
+    assert process.terminated is True
+    assert engine.process is None
+    assert len(read_timeouts) == 1
+    assert read_timeouts[0].total_seconds() == pytest.approx(0.001)
+
+
 def test_js_bridge_request_serializes_concurrent_threads(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
     engine.process = cast(Any, FakeJSBridgeProcess())  # bypass connect; patched I/O targets request serialization only

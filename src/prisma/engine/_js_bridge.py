@@ -457,6 +457,14 @@ class BaseJSBridgeEngine:
         process.stdin.write(f'{line}\n')
         process.stdin.flush()
 
+    def _request_timeout_error(self) -> errors.JSBridgeError:
+        return errors.JSBridgeError(
+            code='BRIDGE_TIMEOUT',
+            message='Timed out waiting for the JS bridge response.',
+            meta=self._stderr_meta(),
+            retryable=False,
+        )
+
     def _read_stdout(self, timeout: timedelta) -> dict[str, Any]:
         process = self.process
         if process is None or process.stdout is None:
@@ -465,12 +473,7 @@ class BaseJSBridgeEngine:
         try:
             line = _readline_with_timeout(process.stdout, timeout=timeout)
         except TimeoutError as exc:
-            raise errors.JSBridgeError(
-                code='BRIDGE_TIMEOUT',
-                message='Timed out waiting for the JS bridge response.',
-                meta=self._stderr_meta(),
-                retryable=False,
-            ) from exc
+            raise self._request_timeout_error() from exc
         except EOFError as exc:
             raise errors.JSBridgeError(
                 code='BRIDGE_PROCESS_EXITED',
@@ -552,10 +555,16 @@ class BaseJSBridgeEngine:
                 request['transactionId'] = str(tx_id)
 
             self._write_request(request)
+            deadline = time.monotonic() + (timeout_ms / 1000)
 
             while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
+                    raise self._request_timeout_error()
+
                 try:
-                    data = self._read_stdout(timedelta(milliseconds=timeout_ms))
+                    data = self._read_stdout(timedelta(seconds=remaining))
                 except errors.JSBridgeError as exc:
                     if exc.code == 'BRIDGE_TIMEOUT':
                         self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
