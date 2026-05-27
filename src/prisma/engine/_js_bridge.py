@@ -51,6 +51,7 @@ _DEFAULT_ENGINE_MODE = 'rust-legacy'
 _VALID_ENGINE_MODES = frozenset({_DEFAULT_ENGINE_MODE, 'js-bridge'})
 _DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 _TIMED_OUT_REQUEST_CLOSE_TIMEOUT = timedelta(seconds=1)
+_STDERR_TAIL_LIMIT = 8192
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -214,7 +215,12 @@ def _readline_with_timeout(stream: IO[str], timeout: timedelta) -> str:
 def _bridge_error_to_exception(data: dict[str, Any]) -> Exception:
     message = str(data.get('message') or 'An error occurred while communicating with the JS bridge.')
     raw_meta = data.get('meta')
-    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
+    meta: dict[str, Any] = raw_meta.copy() if isinstance(raw_meta, dict) else {}
+    raw_debug = data.get('debug')
+    if isinstance(raw_debug, dict):
+        stderr_tail = raw_debug.get('stderrTail')
+        if isinstance(stderr_tail, str) and stderr_tail and 'stderrTail' not in meta:
+            meta['stderrTail'] = stderr_tail
     prisma_code = data.get('prismaCode')
     retryable = bool(data.get('retryable', False))
 
@@ -273,6 +279,53 @@ class BaseJSBridgeEngine:
         self._next_request_id = 0
         self._request_lock = threading.RLock()
         self.process = None
+        self._stderr_tail = ''
+        self._stderr_tail_lock = threading.Lock()
+        self._stderr_thread: threading.Thread | None = None
+
+    def _reset_stderr_tail(self) -> None:
+        with self._stderr_tail_lock:
+            self._stderr_tail = ''
+        self._stderr_thread = None
+
+    def _append_stderr_tail(self, chunk: str) -> None:
+        if not chunk:
+            return
+
+        with self._stderr_tail_lock:
+            self._stderr_tail = f'{self._stderr_tail}{chunk}'[-_STDERR_TAIL_LIMIT:]
+
+    def _stderr_tail_text(self) -> str | None:
+        with self._stderr_tail_lock:
+            return self._stderr_tail or None
+
+    def _stderr_meta(self, meta: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        stderr_tail = self._stderr_tail_text()
+        if stderr_tail is None:
+            return meta
+
+        next_meta = meta.copy() if meta is not None else {}
+        next_meta.setdefault('stderrTail', stderr_tail)
+        return next_meta
+
+    def _start_stderr_reader(self, process: subprocess.Popen[str]) -> None:
+        stream = process.stderr
+        if stream is None:
+            return
+
+        def read_stderr() -> None:
+            try:
+                while True:
+                    chunk = stream.read(4096)
+                    if chunk == '':
+                        return
+                    self._append_stderr_tail(chunk)
+            except Exception as exc:  # pragma: no cover - diagnostic drain must not crash the client
+                log.debug('JS bridge stderr reader stopped: %s', exc)
+
+        thread = threading.Thread(target=read_stderr, daemon=True)
+        self._stderr_thread = thread
+        thread.start()
 
     def _bridge_script(self) -> Path:
         override = os.environ.get(JS_BRIDGE_SCRIPT_ENV)
@@ -370,7 +423,9 @@ class BaseJSBridgeEngine:
                 meta={'executable': node},
             ) from exc
 
+        self._reset_stderr_tail()
         self.process = process
+        self._start_stderr_reader(process)
         return process
 
     def _close_process(self, *, timeout: timedelta | None = None) -> None:
@@ -413,12 +468,14 @@ class BaseJSBridgeEngine:
             raise errors.JSBridgeError(
                 code='BRIDGE_TIMEOUT',
                 message='Timed out waiting for the JS bridge response.',
+                meta=self._stderr_meta(),
                 retryable=False,
             ) from exc
         except EOFError as exc:
             raise errors.JSBridgeError(
                 code='BRIDGE_PROCESS_EXITED',
                 message='JS bridge exited before writing a response.',
+                meta=self._stderr_meta(),
                 retryable=False,
             ) from exc
 
@@ -428,7 +485,7 @@ class BaseJSBridgeEngine:
             raise errors.JSBridgeError(
                 code='BRIDGE_PROTOCOL_ERROR',
                 message='Bridge wrote non-protocol data to stdout.',
-                meta={'stdoutLine': line.rstrip('\n')},
+                meta=self._stderr_meta({'stdoutLine': line.rstrip('\n')}),
                 retryable=False,
             ) from exc
 
@@ -436,7 +493,7 @@ class BaseJSBridgeEngine:
             raise errors.JSBridgeError(
                 code='BRIDGE_PROTOCOL_ERROR',
                 message='Bridge stdout JSON must be an object.',
-                meta={'stdoutValue': value},
+                meta=self._stderr_meta({'stdoutValue': value}),
                 retryable=False,
             )
 
@@ -450,6 +507,7 @@ class BaseJSBridgeEngine:
                 raise errors.JSBridgeError(
                     code='BRIDGE_STARTUP_TIMEOUT',
                     message='Node bridge did not emit bridge.ready before the connect timeout.',
+                    meta=self._stderr_meta(),
                     retryable=True,
                 )
 
@@ -462,14 +520,14 @@ class BaseJSBridgeEngine:
                         raise errors.JSBridgeError(
                             code='BRIDGE_PROTOCOL_ERROR',
                             message='Node bridge protocol version does not match the Python client.',
-                            meta={'expected': JS_BRIDGE_PROTOCOL_VERSION, 'got': protocol},
+                            meta=self._stderr_meta({'expected': JS_BRIDGE_PROTOCOL_VERSION, 'got': protocol}),
                         )
                 return
 
             raise errors.JSBridgeError(
                 code='BRIDGE_PROTOCOL_ERROR',
                 message='Expected bridge.ready as the first JS bridge stdout message.',
-                meta={'message': data},
+                meta=self._stderr_meta({'message': data}),
             )
 
     def _request(
@@ -510,14 +568,14 @@ class BaseJSBridgeEngine:
                     raise errors.JSBridgeError(
                         code='BRIDGE_PROTOCOL_ERROR',
                         message='JS bridge response ID did not match the in-flight request.',
-                        meta={'expected': request_id, 'got': data.get('id')},
+                        meta=self._stderr_meta({'expected': request_id, 'got': data.get('id')}),
                     )
 
                 if ('result' in data) == ('error' in data):
                     raise errors.JSBridgeError(
                         code='BRIDGE_PROTOCOL_ERROR',
                         message='JS bridge response must contain exactly one of result or error.',
-                        meta={'id': request_id},
+                        meta=self._stderr_meta({'id': request_id}),
                     )
 
                 if 'error' in data:
@@ -526,7 +584,7 @@ class BaseJSBridgeEngine:
                         raise errors.JSBridgeError(
                             code='BRIDGE_PROTOCOL_ERROR',
                             message='JS bridge error payload must be an object.',
-                            meta={'id': request_id},
+                            meta=self._stderr_meta({'id': request_id}),
                         )
                     raise _bridge_error_to_exception(error)
 

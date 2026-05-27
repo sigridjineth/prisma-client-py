@@ -20,6 +20,7 @@ from prisma._compat import get_running_loop
 from prisma.binaries import platform
 from prisma.engine.query import QueryEngine
 from prisma.engine._js_bridge import (
+    _STDERR_TAIL_LIMIT,
     SyncJSBridgeEngine,
     get_engine_mode,
     serialize_bridge_value,
@@ -172,6 +173,40 @@ class TimeoutJSBridgeProcess(FakeJSBridgeProcess):
         self.stdout = BlockingJSBridgeStdout(
             '{"id":"req_query_1","result":{"late":true},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}\n'
         )
+
+
+def test_js_bridge_process_exit_error_includes_stderr_tail(tmp_path: Path) -> None:
+    process = FakeJSBridgeProcess()
+    process.stdout = StringIO()
+    process.stderr = StringIO('bridge diagnostic before exit\n')
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, process)  # bypass connect; this test targets local transport diagnostics only
+    engine._start_stderr_reader(cast(Any, process))
+    thread = engine._stderr_thread
+    assert thread is not None
+    thread.join(timeout=5)
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._request('query.graphql', {}, timeout_ms=1, request_id_prefix='req_query')
+
+    assert exc.value.code == 'BRIDGE_PROCESS_EXITED'
+    assert exc.value.meta['stderrTail'] == 'bridge diagnostic before exit\n'
+
+
+def test_js_bridge_stderr_tail_is_bounded(tmp_path: Path) -> None:
+    process = FakeJSBridgeProcess()
+    process.stderr = StringIO(f'{"x" * (_STDERR_TAIL_LIMIT + 100)}tail')
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+
+    engine._start_stderr_reader(cast(Any, process))
+    thread = engine._stderr_thread
+    assert thread is not None
+    thread.join(timeout=5)
+
+    tail = engine._stderr_tail_text()
+    assert tail is not None
+    assert len(tail) <= _STDERR_TAIL_LIMIT
+    assert tail.endswith('tail')
 
 
 def test_js_bridge_request_timeout_closes_process_before_late_response(tmp_path: Path) -> None:
@@ -467,6 +502,21 @@ def test_js_bridge_error_mapping_keeps_bridge_failures_as_js_bridge_errors() -> 
     assert isinstance(exc, errors.JSBridgeError)
     assert exc.code == 'BRIDGE_PROTOCOL_ERROR'
     assert exc.meta == {'field': 'id'}
+
+
+def test_js_bridge_error_mapping_preserves_debug_stderr_tail() -> None:
+    exc = _bridge_error_to_exception(
+        {
+            'code': 'BRIDGE_PROTOCOL_ERROR',
+            'message': 'bad bridge frame',
+            'meta': {'field': 'id'},
+            'debug': {'stderrTail': 'node diagnostic\n'},
+            'retryable': False,
+        }
+    )
+
+    assert isinstance(exc, errors.JSBridgeError)
+    assert exc.meta == {'field': 'id', 'stderrTail': 'node diagnostic\n'}
 
 
 def test_js_bridge_scalar_deserialization() -> None:
