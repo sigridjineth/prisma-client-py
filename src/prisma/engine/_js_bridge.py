@@ -8,6 +8,7 @@ import atexit
 import base64
 import decimal
 import logging
+import functools
 import threading
 import subprocess
 from typing import IO, TYPE_CHECKING, Any, overload
@@ -314,11 +315,12 @@ class BaseJSBridgeEngine:
         stream = process.stderr
         if stream is None:
             return
+        stderr = stream
 
         def read_stderr() -> None:
             try:
                 while True:
-                    chunk = stream.read(4096)
+                    chunk = stderr.read(4096)
                     if chunk == '':
                         return
                     self._append_stderr_tail(chunk)
@@ -570,6 +572,22 @@ class BaseJSBridgeEngine:
                 except errors.JSBridgeError as exc:
                     if exc.code == 'BRIDGE_TIMEOUT':
                         self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
+                    if exc.code == 'BRIDGE_PROCESS_EXITED' and tx_id is not None:
+                        meta = exc.meta.copy()
+                        meta.update(
+                            {
+                                'transactionId': str(tx_id),
+                                'transactionState': 'lost',
+                                'rollbackOutcome': 'unknown',
+                            }
+                        )
+                        raise errors.JSBridgeError(
+                            code=exc.code,
+                            message='JS bridge exited before writing a response.',
+                            meta=meta,
+                            prisma_code=exc.prisma_code,
+                            retryable=exc.retryable,
+                        ) from exc
                     raise
 
                 if data.get('method') == 'bridge.ready':
@@ -826,7 +844,7 @@ class AsyncJSBridgeEngine(BaseJSBridgeEngine, AsyncAbstractEngine):
 
     async def _run_sync(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         loop = get_running_loop()
-        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+        return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
     @override
     def close(self, *, timeout: timedelta | None = None) -> None:

@@ -174,8 +174,11 @@ class BlockingJSBridgeStdout(StringIO):
 class TimeoutJSBridgeProcess(FakeJSBridgeProcess):
     def __init__(self) -> None:
         super().__init__()
-        self.stdout = BlockingJSBridgeStdout(
-            '{"id":"req_query_1","result":{"late":true},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}\n'
+        self.stdout = cast(
+            StringIO,
+            BlockingJSBridgeStdout(
+                '{"id":"req_query_1","result":{"late":true},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}\n'
+            ),
         )
 
 
@@ -303,6 +306,38 @@ def test_js_bridge_process_exit_error_includes_stderr_tail(tmp_path: Path) -> No
 
     assert exc.value.code == 'BRIDGE_PROCESS_EXITED'
     assert exc.value.meta['stderrTail'] == 'bridge diagnostic before exit\n'
+    assert 'transactionId' not in exc.value.meta
+    assert 'transactionState' not in exc.value.meta
+    assert 'rollbackOutcome' not in exc.value.meta
+    assert exc.value.retryable is False
+
+
+def test_js_bridge_process_exit_error_marks_transaction_lost(tmp_path: Path) -> None:
+    process = FakeJSBridgeProcess()
+    process.stdout = StringIO()
+    process.stderr = StringIO('bridge diagnostic before tx exit\n')
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, process)  # bypass connect; this test targets local transport diagnostics only
+    engine._start_stderr_reader(cast(Any, process))
+    thread = engine._stderr_thread
+    assert thread is not None
+    thread.join(timeout=5)
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._request(
+            'query.graphql',
+            {},
+            tx_id=TransactionId('tx_process_exit'),
+            timeout_ms=1,
+            request_id_prefix='req_query',
+        )
+
+    assert exc.value.code == 'BRIDGE_PROCESS_EXITED'
+    assert exc.value.meta['transactionId'] == 'tx_process_exit'
+    assert exc.value.meta['transactionState'] == 'lost'
+    assert exc.value.meta['rollbackOutcome'] == 'unknown'
+    assert exc.value.meta['stderrTail'] == 'bridge diagnostic before tx exit\n'
+    assert exc.value.retryable is False
 
 
 def test_js_bridge_stderr_tail_is_bounded(tmp_path: Path) -> None:
@@ -329,7 +364,7 @@ def test_js_bridge_request_timeout_closes_process_before_late_response(tmp_path:
     with pytest.raises(errors.JSBridgeError) as exc:
         engine._request('query.graphql', {}, timeout_ms=1, request_id_prefix='req_query')
 
-    process.stdout.release()
+    cast(BlockingJSBridgeStdout, process.stdout).release()
 
     assert exc.value.code == 'BRIDGE_TIMEOUT'
     assert process.terminated is True
@@ -378,7 +413,7 @@ def test_js_bridge_request_serializes_concurrent_threads(tmp_path: Path, monkeyp
     first_read_started = threading.Event()
     release_first_response = threading.Event()
     second_request_written = threading.Event()
-    read_calls = 0
+    read_calls = [0]
 
     def write_request(request: dict[str, Any]) -> None:
         request_id = str(request['id'])
@@ -388,10 +423,9 @@ def test_js_bridge_request_serializes_concurrent_threads(tmp_path: Path, monkeyp
             second_request_written.set()
 
     def read_stdout(_timeout: timedelta) -> dict[str, Any]:
-        nonlocal read_calls
         with read_calls_lock:
-            read_calls += 1
-            call = read_calls
+            read_calls[0] += 1
+            call = read_calls[0]
 
         if call == 1:
             first_read_started.set()
