@@ -93,7 +93,33 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
                 created = db.user.create(data={'email': 'alice@example.com', 'name': 'Alice'})
                 found = db.user.find_unique(where={'email': 'alice@example.com'})
                 count = db.user.count()
-                print(json.dumps({'created': created.email, 'found': found.email, 'count': count}, sort_keys=True))
+
+                with db.tx() as tx:
+                    tx.user.create(data={'email': 'commit@example.com', 'name': 'Committed'})
+
+                committed = db.user.find_unique(where={'email': 'commit@example.com'})
+
+                try:
+                    with db.tx() as tx:
+                        tx.user.create(data={'email': 'rollback@example.com', 'name': 'Rolled back'})
+                        raise RuntimeError('force rollback')
+                except RuntimeError:
+                    pass
+
+                rolled_back = db.user.find_unique(where={'email': 'rollback@example.com'})
+
+                print(
+                    json.dumps(
+                        {
+                            'created': created.email,
+                            'found': found.email,
+                            'count': count,
+                            'tx_committed': committed.email if committed else None,
+                            'tx_rolled_back': rolled_back is None,
+                        },
+                        sort_keys=True,
+                    )
+                )
             finally:
                 db.disconnect()
             """
@@ -102,4 +128,10 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
 
     proc = run_checked([sys.executable, str(smoke)], cwd=tmp_path, env=env)
     payload = json.loads(proc.stdout.splitlines()[-1])
-    assert payload == {'count': 1, 'created': 'alice@example.com', 'found': 'alice@example.com'}
+    assert payload == {
+        'count': 1,
+        'created': 'alice@example.com',
+        'found': 'alice@example.com',
+        'tx_committed': 'commit@example.com',
+        'tx_rolled_back': True,
+    }

@@ -211,6 +211,17 @@ def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules
         _send(
             proc,
             {
+                'id': 'req_health_tx_1',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result']['activeTransactions'] == 1
+
+        _send(
+            proc,
+            {
                 'id': 'req_tx_query_1',
                 'method': 'query.execute',
                 'transactionId': tx_id,
@@ -232,6 +243,17 @@ def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules
             },
         )
         assert _read_json_line(proc)['result'] == {'status': 'committed'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_health_tx_2',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result']['activeTransactions'] == 0
 
         _send(
             proc,
