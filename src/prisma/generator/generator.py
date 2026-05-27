@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import logging
@@ -49,6 +50,7 @@ JS_BRIDGE_PROTOCOL_VERSION = '2026-05-26.phase0.v1'
 JS_BRIDGE_ENGINE_ENV = 'PRISMA_PY_ENGINE'
 JS_BRIDGE_PRISMA_VERSION = '7.8.0'
 JS_BRIDGE_PG_VERSION = '8.21.0'
+JS_BRIDGE_TSX_VERSION = '4.22.3'
 JS_BRIDGE_TEMPLATES = (
     'js_bridge/runtime.mjs',
     'js_bridge/package.json.jinja',
@@ -322,12 +324,108 @@ def generate_js_bridge_package(rootdir: Path, *, data: PythonData, params: Dict[
         'driver_package': 'pg',
         'prisma_version': JS_BRIDGE_PRISMA_VERSION,
         'driver_version': JS_BRIDGE_PG_VERSION,
+        'tsx_version': JS_BRIDGE_TSX_VERSION,
         'legacy_prisma_version': prisma_config.prisma_version,
         'deferred_providers_json': json.dumps(JS_BRIDGE_DEFERRED_PROVIDERS, indent=2, sort_keys=True),
     }
 
     for template in JS_BRIDGE_TEMPLATES:
         render_template(rootdir, template, bridge_params)
+
+    bridge_root = rootdir / 'js_bridge'
+    bridge_root.joinpath('schema.prisma').write_text(_build_js_bridge_schema(data.datamodel))
+    bridge_root.joinpath('prisma.config.ts').write_text(_build_js_bridge_prisma_config())
+
+
+_BLOCK_START_RE = re.compile(r'^(?P<kind>datasource|generator)\s+\w+\s*\{')
+_DATASOURCE_URL_FIELDS = ('url', 'directUrl', 'shadowDatabaseUrl')
+
+
+def _brace_delta(line: str) -> int:
+    return line.count('{') - line.count('}')
+
+
+def _build_js_bridge_schema(datamodel: str) -> str:
+    """Build the private Prisma 7 schema used by the generated JS client.
+
+    Prisma 7 moved datasource URLs out of schema files. The Python generator is
+    still invoked from the user's legacy-compatible schema, so the bridge writes
+    a sidecar schema that keeps datasource/provider/model declarations, removes
+    connection URL fields, removes the Python generator block to avoid recursive
+    generation, and appends a Prisma 7 ``prisma-client`` generator configured
+    for the engine-less TypeScript client.
+    """
+
+    rendered: list[str] = []
+    skipping_generator = False
+    generator_depth = 0
+    in_datasource = False
+    datasource_depth = 0
+    top_level_depth = 0
+
+    for line in datamodel.splitlines():
+        stripped = line.strip()
+
+        if skipping_generator:
+            generator_depth += _brace_delta(line)
+            if generator_depth <= 0:
+                skipping_generator = False
+            continue
+
+        if in_datasource:
+            datasource_depth += _brace_delta(line)
+            is_url_field = any(
+                stripped.startswith(f'{field} ') or stripped.startswith(f'{field}=') for field in _DATASOURCE_URL_FIELDS
+            )
+            if not is_url_field:
+                rendered.append(line)
+            if datasource_depth <= 0:
+                in_datasource = False
+            continue
+
+        match = _BLOCK_START_RE.match(stripped) if top_level_depth == 0 else None
+        if match and match.group('kind') == 'generator':
+            skipping_generator = True
+            generator_depth = _brace_delta(line)
+            if generator_depth <= 0:
+                skipping_generator = False
+            continue
+
+        if match and match.group('kind') == 'datasource':
+            in_datasource = True
+            datasource_depth = _brace_delta(line)
+            rendered.append(line)
+            if datasource_depth <= 0:
+                in_datasource = False
+            continue
+
+        rendered.append(line)
+        top_level_depth += _brace_delta(line)
+
+    schema = '\n'.join(rendered).strip()
+    return (
+        f'{schema}\n\n'
+        'generator js_bridge_client {\n'
+        '  provider               = "prisma-client"\n'
+        '  output                 = "./generated/prisma"\n'
+        '  engineType             = "client"\n'
+        '  moduleFormat           = "esm"\n'
+        '  generatedFileExtension = "ts"\n'
+        '  importFileExtension    = "ts"\n'
+        '}\n'
+    )
+
+
+def _build_js_bridge_prisma_config() -> str:
+    return (
+        "import { defineConfig, env } from 'prisma/config';\n\n"
+        'export default defineConfig({\n'
+        "  schema: './schema.prisma',\n"
+        '  datasource: {\n'
+        "    url: env('DATABASE_URL'),\n"
+        '  },\n'
+        '});\n'
+    )
 
 
 def _deferred_provider_message(provider: str) -> str:

@@ -143,6 +143,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

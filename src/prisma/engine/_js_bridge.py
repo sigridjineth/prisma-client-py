@@ -42,6 +42,7 @@ __all__ = (
 ENGINE_MODE_ENV = 'PRISMA_PY_ENGINE'
 JS_BRIDGE_SCRIPT_ENV = 'PRISMA_PY_JS_BRIDGE_SCRIPT'
 JS_BRIDGE_NODE_ENV = 'PRISMA_PY_NODE_BINARY'
+JS_BRIDGE_CLIENT_MODULE_ENV = 'PRISMA_PY_BRIDGE_CLIENT_MODULE'
 JS_BRIDGE_PROTOCOL_VERSION = '2026-05-26.phase0.v1'
 
 _DEFAULT_ENGINE_MODE = 'rust-legacy'
@@ -226,6 +227,38 @@ class BaseJSBridgeEngine:
 
         return self.dml_path.parent / 'js-bridge' / 'index.mjs'
 
+    def _generated_package_dir(self, script: Path) -> Path | None:
+        package_dir = script.parent
+        if package_dir.joinpath('package.json').exists() and package_dir.name == 'js_bridge':
+            return package_dir
+        return None
+
+    def _prepare_generated_package(self, package_dir: Path) -> dict[str, str]:
+        client_module = './generated/prisma/client.ts'
+        client_path = package_dir / 'generated' / 'prisma' / 'client.ts'
+        if not client_path.exists():
+            raise errors.JSBridgeError(
+                code='PRISMA_CLIENT_NOT_FOUND',
+                message=(
+                    'Generated Prisma 7 TypeScript client was not found for JS bridge mode. '
+                    f'Run `npm install && npm run generate` in {package_dir}.'
+                ),
+                meta={'path': str(client_path), 'packageDir': str(package_dir)},
+            )
+
+        tsx_package = package_dir / 'node_modules' / 'tsx'
+        if not tsx_package.exists():
+            raise errors.JSBridgeError(
+                code='PRISMA_CLIENT_NOT_FOUND',
+                message=(
+                    'JS bridge Node dependencies are not installed. '
+                    f'Run `npm install && npm run generate` in {package_dir}.'
+                ),
+                meta={'path': str(tsx_package), 'packageDir': str(package_dir)},
+            )
+
+        return {JS_BRIDGE_CLIENT_MODULE_ENV: client_module}
+
     def _spawn_process(self) -> subprocess.Popen[str]:
         script = self._bridge_script()
         if not script.exists():
@@ -238,20 +271,28 @@ class BaseJSBridgeEngine:
                 meta={'path': str(script)},
             )
 
+        package_dir = self._generated_package_dir(script)
         env = os.environ.copy()
         env.update(
             PRISMA_PY_BRIDGE_SCHEMA_PATH=str(self.dml_path.absolute()),
             PRISMA_PY_BRIDGE_PROVIDER=self.provider,
             PRISMA_PY_BRIDGE_PROTOCOL_VERSION=JS_BRIDGE_PROTOCOL_VERSION,
         )
+        if package_dir is not None:
+            env.update(self._prepare_generated_package(package_dir))
 
         if self._log_queries:
             env.update(LOG_QUERIES='y')
 
         node = os.environ.get(JS_BRIDGE_NODE_ENV, 'node')
+        args = [node]
+        if package_dir is not None:
+            args.extend(['--import', 'tsx'])
+        args.append(script.name)
         try:
             process = subprocess.Popen(
-                [node, str(script.absolute())],
+                args,
+                cwd=str(script.parent),
                 env=env,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,

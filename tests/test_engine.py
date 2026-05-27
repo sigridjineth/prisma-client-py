@@ -173,6 +173,46 @@ def test_js_bridge_default_script_matches_generated_package(tmp_path: Path) -> N
     assert engine._bridge_script() == runtime
 
 
+def test_js_bridge_generated_package_requires_prisma_client_output(tmp_path: Path) -> None:
+    generated = tmp_path / 'js_bridge'
+    generated.mkdir()
+    generated.joinpath('package.json').write_text('{"private": true}')
+
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._prepare_generated_package(generated)
+
+    assert exc.value.code == 'PRISMA_CLIENT_NOT_FOUND'
+    assert 'npm install && npm run generate' in str(exc.value)
+
+
+def test_js_bridge_generated_package_uses_local_ts_client(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    generated = tmp_path / 'js_bridge'
+    generated.joinpath('generated', 'prisma').mkdir(parents=True)
+    generated.joinpath('node_modules', 'tsx').mkdir(parents=True)
+    generated.joinpath('package.json').write_text('{"private": true}')
+    runtime = generated / 'runtime.mjs'
+    runtime.write_text('process.exit(0)')
+    generated.joinpath('generated', 'prisma', 'client.ts').write_text('export class PrismaClient {}')
+    fake_process = FakeJSBridgeProcess()
+
+    def popen(args: list[str], **kwargs: object) -> FakeJSBridgeProcess:
+        fake_process.args = args
+        fake_process.env = kwargs.get('env')  # type: ignore[assignment]
+        return fake_process
+
+    monkeypatch.setattr('prisma.engine._js_bridge.subprocess.Popen', popen)
+
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.connect(timeout=timedelta(seconds=1))
+    engine.close(timeout=timedelta(seconds=1))
+
+    assert fake_process.args == ['node', '--import', 'tsx', 'runtime.mjs']
+    assert fake_process.env is not None
+    assert fake_process.env['PRISMA_PY_BRIDGE_CLIENT_MODULE'] == './generated/prisma/client.ts'
+
+
 def test_js_bridge_scalar_deserialization() -> None:
     assert str(deserialize_bridge_value({'$type': 'Decimal', 'value': '123.45'})) == '123.45'
     assert deserialize_bridge_value({'$type': 'BigInt', 'value': '9007199254740993'}) == 9007199254740993

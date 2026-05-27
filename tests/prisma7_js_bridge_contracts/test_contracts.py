@@ -321,6 +321,7 @@ def test_postgresql_js_bridge_contract_ci_job_is_service_backed() -> None:
     assert 'image: postgres:15' in workflow
     assert 'POSTGRES_USER: postgres' in workflow
     assert 'POSTGRES_PASSWORD: prisma' in workflow
+    assert 'node-version: "24"' in workflow
     assert 'PRISMA_PY_ENGINE: js-bridge' in workflow
     assert 'POSTGRESQL_URL: postgresql://postgres:prisma@localhost:5432/prisma' in workflow
     assert (

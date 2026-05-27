@@ -6,13 +6,19 @@
   "description": "Generated Prisma Client Python Node stdio bridge for PostgreSQL.",
   "main": "./runtime.mjs",
   "scripts": {
-    "start": "node ./runtime.mjs",
+    "generate": "prisma generate --schema ./schema.prisma",
+    "db:push": "prisma db push --schema ./schema.prisma",
+    "start": "node --import tsx ./runtime.mjs",
     "check": "node --check ./runtime.mjs"
   },
   "dependencies": {
     "@prisma/client": "{{ js_bridge.prisma_version }}",
     "@prisma/adapter-pg": "{{ js_bridge.prisma_version }}",
-    "pg": "{{ js_bridge.driver_version }}"
+    "pg": "{{ js_bridge.driver_version }}",
+    "tsx": "{{ js_bridge.tsx_version }}"
+  },
+  "devDependencies": {
+    "prisma": "{{ js_bridge.prisma_version }}"
   },
   "prismaClientPython": {
     "provider": "{{ js_bridge.provider }}",

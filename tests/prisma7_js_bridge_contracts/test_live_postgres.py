@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import os
+import sys
+import json
+import shutil
+import textwrap
+import subprocess
+from pathlib import Path
+
+import pytest
+
+
+def run_checked(args: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(
+        args,
+        cwd=str(cwd),
+        env=env,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    assert proc.returncode == 0, proc.stdout
+    return proc
+
+
+@pytest.mark.skipif(shutil.which('node') is None, reason='Node is required for Prisma 7 JS bridge live tests')
+@pytest.mark.skipif(shutil.which('npm') is None, reason='npm is required for Prisma 7 JS bridge live tests')
+def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
+    url = os.environ.get('POSTGRESQL_URL') or os.environ.get('DATABASE_URL')
+    if not url:
+        pytest.skip('POSTGRESQL_URL or DATABASE_URL is required for the live PostgreSQL bridge test')
+
+    schema = tmp_path / 'schema.prisma'
+    schema.write_text(
+        textwrap.dedent(
+            f"""
+            datasource db {{
+              provider = "postgresql"
+              url      = env("POSTGRESQL_URL")
+            }}
+
+            generator db {{
+              provider = "{sys.executable} -m prisma"
+              output   = "./prisma"
+            }}
+
+            model User {{
+              id    Int     @id @default(autoincrement())
+              email String  @unique
+              name  String?
+            }}
+            """
+        ).strip()
+    )
+
+    env = {
+        **os.environ,
+        'PRISMA_PY_ENGINE': 'js-bridge',
+        'POSTGRESQL_URL': url,
+        'DATABASE_URL': url,
+        'npm_config_cache': str(tmp_path / '.npm-cache'),
+    }
+
+    run_checked([sys.executable, '-m', 'prisma', 'generate', f'--schema={schema}'], cwd=tmp_path, env=env)
+
+    bridge = tmp_path / 'prisma' / 'js_bridge'
+    assert bridge.joinpath('runtime.mjs').exists()
+    assert bridge.joinpath('schema.prisma').exists()
+    assert 'url      = env("POSTGRESQL_URL")' not in bridge.joinpath('schema.prisma').read_text()
+
+    run_checked(['npm', 'install', '--silent'], cwd=bridge, env=env)
+    run_checked(['npm', 'run', 'generate', '--silent'], cwd=bridge, env=env)
+    run_checked(['npm', 'run', 'db:push', '--silent'], cwd=bridge, env=env)
+    run_checked(['npm', 'run', 'check', '--silent'], cwd=bridge, env=env)
+
+    smoke = tmp_path / 'smoke.py'
+    smoke.write_text(
+        textwrap.dedent(
+            """
+            import json
+            import sys
+
+            sys.path.insert(0, '.')
+
+            from prisma import Prisma
+
+            db = Prisma()
+            db.connect()
+            try:
+                db.user.delete_many()
+                created = db.user.create(data={'email': 'alice@example.com', 'name': 'Alice'})
+                found = db.user.find_unique(where={'email': 'alice@example.com'})
+                count = db.user.count()
+                print(json.dumps({'created': created.email, 'found': found.email, 'count': count}, sort_keys=True))
+            finally:
+                db.disconnect()
+            """
+        ).strip()
+    )
+
+    proc = run_checked([sys.executable, str(smoke)], cwd=tmp_path, env=env)
+    payload = json.loads(proc.stdout.splitlines()[-1])
+    assert payload == {'count': 1, 'created': 'alice@example.com', 'found': 'alice@example.com'}

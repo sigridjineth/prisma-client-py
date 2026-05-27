@@ -12,16 +12,26 @@ The current generated bridge package is enabled only for self-hosted PostgreSQL:
 - Prisma Client / adapter version: `{{ js_bridge.prisma_version }}`
 - Prisma adapter package: `{{ js_bridge.adapter_package }}`
 - Driver package: `{{ js_bridge.driver_package }}@{{ js_bridge.driver_version }}`
+- TypeScript runtime loader: `tsx@{{ js_bridge.tsx_version }}`
 - Protocol version: `{{ js_bridge.protocol_version }}`
 
 Install the generated package dependencies from this directory before starting
-the bridge runtime:
+the bridge runtime. `DATABASE_URL` must be set for Prisma CLI commands and for
+the bridge runtime unless the Python client passes an explicit datasource
+override:
 
 ```bash
 npm install
+npm run generate
 npm run check
 npm start
 ```
+
+The generated `schema.prisma` is a Prisma 7 sidecar schema: it removes datasource
+URL fields from the Python schema, uses the `prisma-client` generator, and emits
+the TypeScript client to `./generated/prisma`. The Python client starts
+`runtime.mjs` through Node with the `tsx` loader so that the generated
+Prisma 7 TypeScript client can be imported without Rust query-engine binaries.
 
 ## Deferred providers
 

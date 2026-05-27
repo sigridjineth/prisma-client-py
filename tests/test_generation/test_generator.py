@@ -203,10 +203,20 @@ def test_js_bridge_package_generated_for_postgresql(
     assert bridge.joinpath('README.md').read_text().startswith('# Prisma Client Python JS bridge package')
     assert package_json['private'] is True
     assert package_json['type'] == 'module'
+    assert package_json['scripts'] == {
+        'generate': 'prisma generate --schema ./schema.prisma',
+        'db:push': 'prisma db push --schema ./schema.prisma',
+        'start': 'node --import tsx ./runtime.mjs',
+        'check': 'node --check ./runtime.mjs',
+    }
     assert package_json['dependencies'] == {
         '@prisma/client': '7.8.0',
         '@prisma/adapter-pg': '7.8.0',
         'pg': '8.21.0',
+        'tsx': '4.22.3',
+    }
+    assert package_json['devDependencies'] == {
+        'prisma': '7.8.0',
     }
     assert package_json['prismaClientPython'] == {
         'provider': 'postgresql',
@@ -219,7 +229,26 @@ def test_js_bridge_package_generated_for_postgresql(
     assert bridge_config['adapterPackage'] == '@prisma/adapter-pg'
     assert bridge_config['driverPackage'] == 'pg'
     assert bridge_config['driverVersion'] == '8.21.0'
+    assert bridge_config['tsxVersion'] == '4.22.3'
+    assert bridge_config['clientModule'] == './generated/prisma/client.ts'
     assert bridge_config['deferredProviders']['sqlite']['support_level'] == 'Deferred'
+
+    schema = bridge.joinpath('schema.prisma').read_text()
+    assert 'url      = "postgresql://postgres:prisma@localhost:5432/prisma"' not in schema
+    assert 'generator db' not in schema
+    assert 'generator js_bridge_client' in schema
+    assert 'provider               = "prisma-client"' in schema
+    assert 'engineType             = "client"' in schema
+    assert 'output                 = "./generated/prisma"' in schema
+    assert bridge.joinpath('prisma.config.ts').read_text() == (
+        "import { defineConfig, env } from 'prisma/config';\n\n"
+        'export default defineConfig({\n'
+        "  schema: './schema.prisma',\n"
+        '  datasource: {\n'
+        "    url: env('DATABASE_URL'),\n"
+        '  },\n'
+        '});\n'
+    )
 
     # Python public generated surface remains present; the bridge package is private sidecar output.
     assert (testdir.path / 'prisma' / 'client.py').exists()
