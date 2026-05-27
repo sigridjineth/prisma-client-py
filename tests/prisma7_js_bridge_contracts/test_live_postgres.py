@@ -95,6 +95,12 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
                 found = db.user.find_unique(where={'email': 'alice@example.com'})
                 count = db.user.count()
 
+                with db.batch_() as batch:
+                    batch.user.create(data={'email': 'batch-1@example.com', 'name': 'Batch 1'})
+                    batch.user.create(data={'email': 'batch-2@example.com', 'name': 'Batch 2'})
+
+                batch_count = db.user.count()
+
                 with db.tx() as tx:
                     tx.user.create(data={'email': 'commit@example.com', 'name': 'Committed'})
 
@@ -130,6 +136,7 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
                             'created': created.email,
                             'found': found.email,
                             'count': count,
+                            'batch_count': batch_count,
                             'tx_committed': committed.email if committed else None,
                             'tx_rolled_back': rolled_back is None,
                             'tx_closed_error': tx_closed_error,
@@ -149,6 +156,7 @@ def test_generated_js_bridge_runs_live_postgresql_crud(tmp_path: Path) -> None:
     payload = json.loads(proc.stdout.splitlines()[-1])
     assert payload == {
         'count': 1,
+        'batch_count': 3,
         'created': 'alice@example.com',
         'found': 'alice@example.com',
         'tx_closed_error': 'TRANSACTION_CLOSED',

@@ -143,3 +143,17 @@ def test_async_client_can_be_imported() -> None:
         stdout=subprocess.PIPE,
     )
     assert _clean_line(proc) == str(ASYNC_ROOTDIR / '__init__.py')
+
+
+def test_generated_batch_commit_routes_js_bridge_operations() -> None:
+    """Generated batch helpers keep legacy GraphQL batches and add JS bridge query.batch."""
+    sync_client = SYNC_ROOTDIR.joinpath('client.py').read_text()
+    async_client = ASYNC_ROOTDIR.joinpath('client.py').read_text()
+
+    assert 'self.__operations: List[Dict[str, Any]] = []' in sync_client
+    assert "'method': 'query.batch'" in sync_client
+    assert 'query_operation(' in sync_client
+
+    assert 'self.__operations: List[Dict[str, Any]] = []' in async_client
+    assert "'method': 'query.batch'" in async_client
+    assert 'aquery_operation(' in async_client

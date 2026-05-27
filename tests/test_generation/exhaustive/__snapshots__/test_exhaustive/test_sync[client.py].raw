@@ -329,6 +329,7 @@ class Batch:
     def __init__(self, client: Prisma) -> None:
         self.__client = client
         self.__queries: List[str] = []
+        self.__operations: List[Dict[str, Any]] = []
         self._active_provider = client._active_provider
         self.post = PostBatchActions(self)
         self.user = UserBatchActions(self)
@@ -350,12 +351,32 @@ class Batch:
             relational_field_mappings=RELATIONAL_FIELD_MAPPINGS,
         )
         self.__queries.append(builder.build_query())
+        operation = self.__client._make_js_bridge_operation(builder)
+        if operation['method'] == 'query.execute':
+            self.__operations.append(operation['params'])
+        elif operation['method'] == 'query.raw':
+            self.__operations.append({'kind': 'raw', **operation['params']})
 
     def commit(self) -> None:
         """Execute the queries"""
         # TODO: normalise this, we should still call client._execute
         queries = self.__queries
+        operations = self.__operations
         self.__queries = []
+        self.__operations = []
+
+        if hasattr(self.__client._engine, 'query_operation'):
+            cast(Any, self.__client._engine).query_operation(
+                operation={
+                    'method': 'query.batch',
+                    'params': {
+                        'operations': operations,
+                        'isolationLevel': None,
+                    },
+                },
+                tx_id=self.__client._tx_id,
+            )
+            return
 
         payload = {
             'batch': [

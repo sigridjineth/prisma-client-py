@@ -39,6 +39,8 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
                   create: async (args) => ({id: 2n, ...args.data}),
                 };
                 this.user = {
+                  create: async (args) => ({id: 3n, ...args.data}),
+                  count: async () => 1,
                   findMany: async (args) => {
                     if (args && args.delayMs) {
                       await new Promise((resolve) => setTimeout(resolve, args.delayMs));
@@ -393,6 +395,56 @@ def test_js_bridge_runtime_decodes_tagged_scalar_inputs(fake_bridge_modules: dic
             'blobText': 'hello',
             'jsonNested': 'ok',
         }
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_batches_model_and_raw_operations(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_batch_1',
+                'method': 'query.batch',
+                'params': {
+                    'isolationLevel': None,
+                    'operations': [
+                        {
+                            'kind': 'model',
+                            'model': 'User',
+                            'action': 'create',
+                            'args': {'data': {'email': 'batched@example.com'}},
+                        },
+                        {
+                            'kind': 'model',
+                            'model': 'User',
+                            'action': 'count',
+                            'args': {},
+                        },
+                        {
+                            'kind': 'raw',
+                            'action': 'queryRaw',
+                            'sql': 'SELECT $1::text AS value',
+                            'parameters': ['hello'],
+                        },
+                    ],
+                },
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == [
+            {'id': {'$type': 'BigInt', 'value': '3'}, 'email': 'batched@example.com'},
+            1,
+            [{'ok': True, 'sql': 'SELECT $1::text AS value', 'params': ['hello']}],
+        ]
 
         _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
         assert _read_json_line(proc)['result'] == {'status': 'shutdown'}

@@ -693,6 +693,25 @@ class BridgeRuntime {
     if (!isObject(operation)) {
       throw protocolFailure('Batch operation must be an object.');
     }
+    if (operation.kind === 'raw') {
+      if (providerName() !== 'postgresql') {
+        throw new BridgeFailure('RAW_QUERY_UNSUPPORTED', 'Raw batch queries are not enabled for this provider in JS bridge mode.', {
+          meta: {provider: providerName()},
+        });
+      }
+      const parameters = Array.isArray(operation.parameters) ? decodeTaggedScalars(operation.parameters) : [];
+      const sql = operation.sql;
+      if (typeof sql !== 'string') {
+        throw protocolFailure('Raw batch operation sql must be a string.', {field: 'sql'});
+      }
+      const method = operation.action === 'executeRaw' ? '$executeRawUnsafe' : '$queryRawUnsafe';
+      if (typeof client?.[method] !== 'function') {
+        throw new BridgeFailure('RAW_QUERY_UNSUPPORTED', 'Generated Prisma Client does not expose the requested raw batch query method.', {
+          meta: {method},
+        });
+      }
+      return client[method](sql, ...parameters);
+    }
     if (operation.kind !== 'model') {
       throw protocolFailure('Only model batch operations are supported in this bridge slice.', {kind: operation.kind});
     }
