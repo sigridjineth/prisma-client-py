@@ -322,6 +322,46 @@ function mapPrismaError(error, context = {}) {
   });
 }
 
+function nonNegativeInteger(value) {
+  if (Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === 'string' && /^[0-9]+$/.test(value)) {
+    return Number(value);
+  }
+  return null;
+}
+
+function inferBatchOperationIndex(error) {
+  const meta = isObject(error?.meta) ? error.meta : {};
+  for (const value of [
+    error?.operationIndex,
+    error?.batchRequestIdx,
+    error?.batchRequestIndex,
+    meta.operationIndex,
+    meta.batchRequestIdx,
+    meta.batchRequestIndex,
+  ]) {
+    const index = nonNegativeInteger(value);
+    if (index !== null) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function batchFailureContext(error) {
+  const context = {
+    method: 'query.batch',
+    rollbackOutcome: 'confirmed',
+  };
+  const operationIndex = inferBatchOperationIndex(error);
+  if (operationIndex !== null) {
+    context.operationIndex = operationIndex;
+  }
+  return context;
+}
+
 function parseDatasource(value) {
   if (value === null || value === undefined) {
     return null;
@@ -777,7 +817,7 @@ class BridgeRuntime {
       try {
         return encodeSpecialScalars(await client.$transaction(operations, params.isolationLevel ? {isolationLevel: params.isolationLevel} : undefined));
       } catch (error) {
-        throw mapPrismaError(error, {method: 'query.batch'});
+        throw mapPrismaError(error, batchFailureContext(error));
       }
     }
     return encodeSpecialScalars(await Promise.all(operations));

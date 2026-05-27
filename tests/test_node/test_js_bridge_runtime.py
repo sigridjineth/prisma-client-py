@@ -53,6 +53,13 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
                 this.user = {
                   create: async (args) => ({id: 3n, ...args.data}),
                   count: async () => 1,
+                  duplicateEmail: async () => {
+                    const err = new Error('Unique constraint failed on the fields: (`email`)');
+                    err.name = 'PrismaClientKnownRequestError';
+                    err.code = 'P2002';
+                    err.meta = {target: ['email']};
+                    throw err;
+                  },
                   findMany: async (args) => {
                     if (args && args.delayMs) {
                       await new Promise((resolve) => setTimeout(resolve, args.delayMs));
@@ -92,7 +99,16 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
               async $transaction(operationsOrCallback, options) {
                 this.transactionOptions.push(options || null);
                 if (Array.isArray(operationsOrCallback)) {
-                  return await Promise.all(operationsOrCallback);
+                  return await Promise.all(
+                    operationsOrCallback.map((operation, index) =>
+                      Promise.resolve(operation).catch((error) => {
+                        if (error && typeof error === 'object' && !Number.isInteger(error.batchRequestIdx)) {
+                          error.batchRequestIdx = index;
+                        }
+                        throw error;
+                      })
+                    )
+                  );
                 }
                 if (typeof operationsOrCallback === 'function') {
                   return await operationsOrCallback({
@@ -701,6 +717,55 @@ def test_js_bridge_runtime_batches_model_and_raw_operations(fake_bridge_modules:
             1,
             [{'ok': True, 'sql': 'SELECT $1::text AS value', 'params': ['hello']}],
         ]
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_batch_failure_reports_rollback_metadata(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_batch_failure_1',
+                'method': 'query.batch',
+                'params': {
+                    'isolationLevel': None,
+                    'operations': [
+                        {
+                            'kind': 'model',
+                            'model': 'User',
+                            'action': 'create',
+                            'args': {'data': {'email': 'before-failure@example.com'}},
+                        },
+                        {
+                            'kind': 'model',
+                            'model': 'User',
+                            'action': 'duplicateEmail',
+                            'args': {},
+                        },
+                    ],
+                },
+                'timeoutMs': 1000,
+            },
+        )
+        response = _read_json_line(proc)
+        assert response['id'] == 'req_batch_failure_1'
+        assert response['error']['code'] == 'PRISMA_KNOWN_REQUEST_ERROR'
+        assert response['error']['prismaCode'] == 'P2002'
+        assert response['error']['meta'] == {
+            'method': 'query.batch',
+            'rollbackOutcome': 'confirmed',
+            'operationIndex': 1,
+            'target': ['email'],
+        }
 
         _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
         assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
