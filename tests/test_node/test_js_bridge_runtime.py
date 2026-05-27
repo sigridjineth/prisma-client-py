@@ -35,7 +35,12 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
                 this.connected = false;
                 this.transactionOptions = [];
                 this.txUser = {
-                  findMany: async () => [{id: 2n, email: 'tx@example.com'}],
+                  findMany: async (args) => {
+                    if (args && args.delayMs) {
+                      await new Promise((resolve) => setTimeout(resolve, args.delayMs));
+                    }
+                    return [{id: 2n, email: 'tx@example.com'}];
+                  },
                   create: async (args) => ({id: 2n, ...args.data}),
                 };
                 this.user = {
@@ -353,6 +358,191 @@ def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules
             },
         )
         assert _read_json_line(proc)['error']['code'] == 'TRANSACTION_CLOSED'
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_transaction_request_timeout_taints_transaction(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_connect_1',
+                'method': 'client.connect',
+                'params': {'datasource': None, 'logQueries': False, 'adapterOptions': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'connected'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_start_1',
+                'method': 'transaction.start',
+                'params': {'timeoutMs': 5000, 'maxWaitMs': 1000, 'isolationLevel': None},
+                'timeoutMs': 1000,
+            },
+        )
+        tx_id = _read_json_line(proc)['result']['transactionId']
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_timeout_1',
+                'method': 'query.execute',
+                'transactionId': tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {'delayMs': 200}},
+                'timeoutMs': 20,
+            },
+        )
+        timeout = _read_json_line(proc)
+        assert timeout['id'] == 'req_tx_timeout_1'
+        assert timeout['error']['code'] == 'BRIDGE_TIMEOUT'
+        assert timeout['error']['meta']['requestId'] == 'req_tx_timeout_1'
+        assert timeout['error']['meta']['transactionId'] == tx_id
+        assert timeout['error']['meta']['transactionState'] == 'tainted'
+        assert timeout['error']['meta']['tainted'] is True
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_commit_after_timeout_1',
+                'method': 'transaction.commit',
+                'transactionId': tx_id,
+                'params': {},
+                'timeoutMs': 1000,
+            },
+        )
+        commit = _read_json_line(proc)
+        assert commit['error']['code'] == 'TRANSACTION_CLOSED'
+        assert commit['error']['meta']['transactionId'] == tx_id
+        assert commit['error']['meta']['tainted'] is True
+        assert commit['error']['meta']['transactionState'] in {'tainted', 'rolled_back'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_query_after_timeout_1',
+                'method': 'query.execute',
+                'transactionId': tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        query = _read_json_line(proc)
+        assert query['error']['code'] == 'TRANSACTION_CLOSED'
+        assert query['error']['meta']['transactionId'] == tx_id
+        assert query['error']['meta']['tainted'] is True
+        assert query['error']['meta']['transactionState'] in {'tainted', 'rolled_back'}
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_transaction_request_cancel_taints_transaction(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_connect_1',
+                'method': 'client.connect',
+                'params': {'datasource': None, 'logQueries': False, 'adapterOptions': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'connected'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_start_1',
+                'method': 'transaction.start',
+                'params': {'timeoutMs': 5000, 'maxWaitMs': 1000, 'isolationLevel': None},
+                'timeoutMs': 1000,
+            },
+        )
+        tx_id = _read_json_line(proc)['result']['transactionId']
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_cancel_target_1',
+                'method': 'query.execute',
+                'transactionId': tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {'delayMs': 500}},
+                'timeoutMs': 1000,
+            },
+        )
+        _send(
+            proc,
+            {
+                'id': 'req_tx_cancel_1',
+                'method': 'bridge.cancel',
+                'params': {'targetRequestId': 'req_tx_cancel_target_1', 'reason': 'python-timeout'},
+                'timeoutMs': 1000,
+            },
+        )
+        frames = [_read_json_line(proc), _read_json_line(proc)]
+        by_id = {frame['id']: frame for frame in frames}
+        assert by_id['req_tx_cancel_1']['result'] == {
+            'status': 'cancellation_requested',
+            'targetRequestId': 'req_tx_cancel_target_1',
+        }
+        cancelled = by_id['req_tx_cancel_target_1']
+        assert cancelled['error']['code'] == 'BRIDGE_CANCELLED'
+        assert cancelled['error']['meta']['requestId'] == 'req_tx_cancel_target_1'
+        assert cancelled['error']['meta']['reason'] == 'python-timeout'
+        assert cancelled['error']['meta']['transactionId'] == tx_id
+        assert cancelled['error']['meta']['transactionState'] == 'tainted'
+        assert cancelled['error']['meta']['tainted'] is True
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_commit_after_cancel_1',
+                'method': 'transaction.commit',
+                'transactionId': tx_id,
+                'params': {},
+                'timeoutMs': 1000,
+            },
+        )
+        commit = _read_json_line(proc)
+        assert commit['error']['code'] == 'TRANSACTION_CLOSED'
+        assert commit['error']['meta']['transactionId'] == tx_id
+        assert commit['error']['meta']['tainted'] is True
+        assert commit['error']['meta']['transactionState'] in {'tainted', 'rolled_back'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_query_after_cancel_1',
+                'method': 'query.execute',
+                'transactionId': tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        query = _read_json_line(proc)
+        assert query['error']['code'] == 'TRANSACTION_CLOSED'
+        assert query['error']['meta']['transactionId'] == tx_id
+        assert query['error']['meta']['tainted'] is True
+        assert query['error']['meta']['transactionState'] in {'tainted', 'rolled_back'}
 
         _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
         assert _read_json_line(proc)['result'] == {'status': 'shutdown'}

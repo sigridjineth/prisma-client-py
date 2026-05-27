@@ -128,16 +128,16 @@ function protocolFailure(message, meta = {}) {
   return new BridgeFailure('BRIDGE_PROTOCOL_ERROR', message, {meta});
 }
 
-function timeoutFailure(requestId) {
+function timeoutFailure(requestId, transactionMeta = null) {
   return new BridgeFailure('BRIDGE_TIMEOUT', 'Bridge request exceeded timeout.', {
-    meta: {requestId},
+    meta: {requestId, ...(transactionMeta ?? {})},
     retryable: false,
   });
 }
 
-function cancelledFailure(requestId, reason) {
+function cancelledFailure(requestId, reason, transactionMeta = null) {
   return new BridgeFailure('BRIDGE_CANCELLED', 'Bridge request was cancelled.', {
-    meta: {requestId, reason: reason ?? null},
+    meta: {requestId, reason: reason ?? null, ...(transactionMeta ?? {})},
     retryable: false,
   });
 }
@@ -362,6 +362,7 @@ class BridgeRuntime {
     this.connected = false;
     this.inFlight = new Map();
     this.transactions = new Map();
+    this.closedTransactions = new Map();
     this.nextTransactionId = 0;
     this.clientModule = null;
     this.adapterModule = null;
@@ -482,7 +483,8 @@ class BridgeRuntime {
     this.shuttingDown = true;
     for (const [id, record] of this.inFlight) {
       if (id !== currentRequestId) {
-        record.controller.abort(cancelledFailure(id, 'bridge-shutdown'));
+        const transactionMeta = this.taintTransactionForRequest(record, 'bridge-shutdown');
+        record.controller.abort(cancelledFailure(id, 'bridge-shutdown', transactionMeta));
       }
     }
     await this.rollbackOpenTransactions('bridge-shutdown');
@@ -517,6 +519,9 @@ class BridgeRuntime {
       state: 'starting',
       client: null,
       close,
+      closeSettled: false,
+      tainted: false,
+      taintReason: null,
       ready: ready.promise,
       promise: null,
     };
@@ -532,7 +537,9 @@ class BridgeRuntime {
         return {status: 'committed'};
       } catch (error) {
         if (error instanceof RollbackSignal) {
-          record.state = 'rolled_back';
+          if (!record.tainted) {
+            record.state = 'rolled_back';
+          }
           throw error;
         }
         record.state = 'failed';
@@ -541,11 +548,12 @@ class BridgeRuntime {
     }, Object.keys(options).length ? options : undefined)
       .catch((error) => {
         if (error instanceof RollbackSignal) {
-          return {status: 'rolled_back', reason: error.reason};
+          return {status: record.state, reason: error.reason, tainted: record.tainted};
         }
         throw error;
       })
       .finally(() => {
+        this.rememberClosedTransaction(record);
         this.transactions.delete(transactionId);
       });
 
@@ -566,6 +574,79 @@ class BridgeRuntime {
     return {transactionId};
   }
 
+  transactionMeta(recordOrHistory) {
+    if (!recordOrHistory) {
+      return {};
+    }
+    return {
+      transactionId: recordOrHistory.id,
+      transactionState: recordOrHistory.state,
+      tainted: recordOrHistory.tainted === true,
+    };
+  }
+
+  rememberClosedTransaction(record) {
+    this.closedTransactions.set(record.id, {
+      id: record.id,
+      state: record.state,
+      tainted: record.tainted === true,
+      reason: record.taintReason,
+      closedAt: nowMs(),
+    });
+    while (this.closedTransactions.size > 256) {
+      const oldest = this.closedTransactions.keys().next().value;
+      this.closedTransactions.delete(oldest);
+    }
+  }
+
+  closedTransactionFailure(transactionId, message = 'Transaction is not open or has already been closed.') {
+    return new BridgeFailure('TRANSACTION_CLOSED', message, {
+      meta: {
+        transactionId,
+        ...this.transactionMeta(this.closedTransactions.get(transactionId)),
+      },
+    });
+  }
+
+  resolveTransactionClose(record, result) {
+    if (record.closeSettled) {
+      return;
+    }
+    record.closeSettled = true;
+    record.close.resolve(result);
+  }
+
+  rejectTransactionClose(record, error) {
+    if (record.closeSettled) {
+      return;
+    }
+    record.closeSettled = true;
+    record.close.reject(error);
+  }
+
+  taintTransaction(transactionId, reason) {
+    if (typeof transactionId !== 'string' || transactionId.length === 0) {
+      return null;
+    }
+    const record = this.transactions.get(transactionId);
+    if (!record) {
+      const history = this.closedTransactions.get(transactionId);
+      return history ? this.transactionMeta(history) : {transactionId};
+    }
+    record.tainted = true;
+    record.taintReason = reason ?? null;
+    record.state = 'tainted';
+    this.rejectTransactionClose(record, new RollbackSignal(transactionId, reason ?? 'bridge-transaction-tainted'));
+    return this.transactionMeta(record);
+  }
+
+  taintTransactionForRequest(record, reason) {
+    if (!record?.transactionId) {
+      return null;
+    }
+    return this.taintTransaction(record.transactionId, reason);
+  }
+
   async transactionClient(transactionId) {
     if (typeof transactionId !== 'string' || transactionId.length === 0) {
       throw protocolFailure('transactionId must be a non-empty string.', {field: 'transactionId'});
@@ -573,15 +654,13 @@ class BridgeRuntime {
 
     const record = this.transactions.get(transactionId);
     if (!record) {
-      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open or has already been closed.', {
-        meta: {transactionId},
-      });
+      throw this.closedTransactionFailure(transactionId);
     }
 
     await record.ready;
-    if (record.state !== 'open' || !record.client) {
+    if (record.tainted || record.state !== 'open' || !record.client) {
       throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open for queries.', {
-        meta: {transactionId, transactionState: record.state},
+        meta: this.transactionMeta(record),
       });
     }
     return record.client;
@@ -590,17 +669,20 @@ class BridgeRuntime {
   async commitTransaction(transactionId) {
     const record = this.transactions.get(transactionId);
     if (!record) {
-      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open or has already been closed.', {
-        meta: {transactionId},
-      });
+      throw this.closedTransactionFailure(transactionId);
     }
 
     await record.ready;
-    record.close.resolve({status: 'committed'});
+    if (record.tainted || record.state !== 'open') {
+      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open for commit.', {
+        meta: this.transactionMeta(record),
+      });
+    }
+    this.resolveTransactionClose(record, {status: 'committed'});
     const result = await record.promise;
     if (result?.status !== 'committed') {
       throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction did not commit successfully.', {
-        meta: {transactionId, transactionState: result?.status ?? record.state},
+        meta: {transactionId, transactionState: result?.status ?? record.state, tainted: result?.tainted === true},
       });
     }
     return {status: 'committed'};
@@ -613,7 +695,7 @@ class BridgeRuntime {
     }
 
     await record.ready;
-    record.close.reject(new RollbackSignal(transactionId, params.reason ?? 'python-rollback'));
+    this.rejectTransactionClose(record, new RollbackSignal(transactionId, params.reason ?? 'python-rollback'));
     await record.promise;
     return {status: 'rolled_back'};
   }
@@ -733,7 +815,9 @@ class BridgeRuntime {
     if (!record || record.responded) {
       return {status: 'not_found', targetRequestId};
     }
-    record.controller.abort(cancelledFailure(targetRequestId, params.reason ?? 'bridge.cancel'));
+    const reason = params.reason ?? 'bridge.cancel';
+    const transactionMeta = this.taintTransactionForRequest(record, reason);
+    record.controller.abort(cancelledFailure(targetRequestId, reason, transactionMeta));
     return {status: 'cancellation_requested', targetRequestId};
   }
 
@@ -829,12 +913,14 @@ class BridgeRuntime {
       id: request.id,
       controller,
       responded: false,
+      transactionId: request.transactionId ?? null,
     };
     this.inFlight.set(request.id, record);
 
     const timeoutPromise = delay(request.timeoutMs, undefined, {signal: controller.signal})
       .then(() => {
-        throw timeoutFailure(request.id);
+        const transactionMeta = this.taintTransactionForRequest(record, 'bridge-timeout');
+        throw timeoutFailure(request.id, transactionMeta);
       });
 
     const abortPromise = new Promise((_, reject) => {
