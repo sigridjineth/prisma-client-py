@@ -45,6 +45,18 @@ function redirectConsoleToStderr() {
   }
 }
 
+function redirectStdoutWritesToStderr() {
+  process.stdout.write = (chunk, encoding, callback) => {
+    const done = typeof encoding === 'function' ? encoding : callback;
+    writeStderr(Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk));
+    if (typeof done === 'function') {
+      setImmediate(done);
+    }
+    return true;
+  };
+}
+
+redirectStdoutWritesToStderr();
 redirectConsoleToStderr();
 
 function writeFrame(frame) {
@@ -286,7 +298,7 @@ function mapPrismaError(error, context = {}) {
 
   if (name.includes('Validation')) {
     return new BridgeFailure('PRISMA_VALIDATION_ERROR', 'Invalid Prisma Client query arguments.', {
-      meta: context,
+      meta: {...context, ...(isObject(error?.meta) ? error.meta : {})},
       prismaCode: code,
       stack: error?.stack ?? null,
       retryable: false,

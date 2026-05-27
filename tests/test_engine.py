@@ -374,6 +374,45 @@ def test_js_bridge_request_timeout_closes_process_before_late_response(tmp_path:
         engine._request('bridge.healthcheck', {}, timeout_ms=1, request_id_prefix='req_health')
 
 
+def test_js_bridge_protocol_error_closes_process_before_late_response(tmp_path: Path) -> None:
+    process = FakeJSBridgeProcess()
+    process.stdout = StringIO(
+        '{"id":"req_other_1","result":{"late":true},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}\n'
+    )
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, process)  # bypass connect; this test targets protocol-error cleanup only
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._request('query.graphql', {}, timeout_ms=1000, request_id_prefix='req_query')
+
+    assert exc.value.code == 'BRIDGE_PROTOCOL_ERROR'
+    assert exc.value.meta['expected'] == 'req_query_1'
+    assert exc.value.meta['got'] == 'req_other_1'
+    assert process.terminated is True
+    assert engine.process is None
+
+    with pytest.raises(errors.NotConnectedError):
+        engine._request('bridge.healthcheck', {}, timeout_ms=1, request_id_prefix='req_health')
+
+
+def test_js_bridge_non_protocol_stdout_closes_process(tmp_path: Path) -> None:
+    process = FakeJSBridgeProcess()
+    process.stdout = StringIO('direct stdout contamination\n')
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, process)  # bypass connect; this test targets stdout contamination cleanup only
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._request('query.graphql', {}, timeout_ms=1000, request_id_prefix='req_query')
+
+    assert exc.value.code == 'BRIDGE_PROTOCOL_ERROR'
+    assert exc.value.meta['stdoutLine'] == 'direct stdout contamination'
+    assert process.terminated is True
+    assert engine.process is None
+
+    with pytest.raises(errors.NotConnectedError):
+        engine._request('bridge.healthcheck', {}, timeout_ms=1, request_id_prefix='req_health')
+
+
 def test_js_bridge_request_total_deadline_ignores_stray_ready_frames(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

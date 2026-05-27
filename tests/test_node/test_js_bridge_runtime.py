@@ -3,6 +3,7 @@ import json
 import shutil
 import textwrap
 import subprocess
+from time import sleep
 from typing import Any
 from pathlib import Path
 
@@ -20,6 +21,12 @@ def _read_json_line(proc: subprocess.Popen[str]) -> dict[str, Any]:
 def _send(proc: subprocess.Popen[str], frame: dict[str, Any]) -> None:
     assert proc.stdin is not None
     proc.stdin.write(json.dumps(frame) + '\n')
+    proc.stdin.flush()
+
+
+def _send_line(proc: subprocess.Popen[str], line: str) -> None:
+    assert proc.stdin is not None
+    proc.stdin.write(line + '\n')
     proc.stdin.flush()
 
 
@@ -56,7 +63,12 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
                     const err = new Error('bad where');
                     err.name = 'PrismaClientValidationError';
                     err.code = 'P2009';
+                    err.meta = {kind: 'UnknownArgument', argumentPath: ['where', 'emailz']};
                     throw err;
+                  },
+                  stdoutNoise: async () => {
+                    process.stdout.write('fake direct stdout diagnostic\\n');
+                    return [{ok: true}];
                   },
                   scalarEcho: async (args) => ({
                     whenIsDate: args.data.when instanceof Date,
@@ -188,6 +200,34 @@ def test_js_bridge_runtime_lifecycle_stdout_protocol_only(fake_bridge_modules: d
         assert proc.wait(timeout=5) == 0
         stderr = proc.stderr.read() if proc.stderr is not None else ''
         assert 'fake client diagnostic on stdout API' in stderr
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_redirects_direct_stdout_writes(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_stdout_noise_1',
+                'method': 'query.execute',
+                'params': {'kind': 'model', 'model': 'User', 'action': 'stdoutNoise', 'args': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        response = _read_json_line(proc)
+        assert response['id'] == 'req_stdout_noise_1'
+        assert response['result'] == [{'ok': True}]
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+        stderr = proc.stderr.read() if proc.stderr is not None else ''
+        assert 'fake direct stdout diagnostic' in stderr
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -685,11 +725,171 @@ def test_js_bridge_runtime_shutdown_cancels_in_flight_requests(fake_bridge_modul
             },
         )
         _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        _send(
+            proc,
+            {
+                'id': 'req_after_shutdown_1',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
 
-        frames = [_read_json_line(proc), _read_json_line(proc)]
+        frames = [_read_json_line(proc), _read_json_line(proc), _read_json_line(proc)]
         by_id = {frame['id']: frame for frame in frames}
         assert by_id['req_shutdown_target_1']['error']['code'] == 'BRIDGE_CANCELLED'
+        assert by_id['req_after_shutdown_1']['error']['code'] == 'BRIDGE_PROCESS_EXITED'
         assert by_id['req_shutdown_1']['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_malformed_json_is_fatal_and_stderr_only(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send_line(proc, '{"id": "bad_json",')
+
+        assert proc.wait(timeout=5) == 1
+        stdout = proc.stdout.read() if proc.stdout is not None else ''
+        stderr = proc.stderr.read() if proc.stderr is not None else ''
+        assert stdout == ''
+        assert 'Malformed JSON protocol line:' in stderr
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_validates_envelopes_and_cancel_targets(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_bad_params_1',
+                'method': 'bridge.healthcheck',
+                'params': None,
+                'timeoutMs': 1000,
+            },
+        )
+        bad_params = _read_json_line(proc)
+        assert bad_params['id'] == 'req_bad_params_1'
+        assert bad_params['error']['code'] == 'BRIDGE_PROTOCOL_ERROR'
+        assert bad_params['error']['meta'] == {'field': 'params'}
+        assert bad_params['error']['retryable'] is False
+
+        _send(
+            proc,
+            {
+                'id': 'req_cancel_missing_target_1',
+                'method': 'bridge.cancel',
+                'params': {},
+                'timeoutMs': 1000,
+            },
+        )
+        missing_target = _read_json_line(proc)
+        assert missing_target['id'] == 'req_cancel_missing_target_1'
+        assert missing_target['error']['code'] == 'BRIDGE_PROTOCOL_ERROR'
+        assert missing_target['error']['meta'] == {'field': 'targetRequestId'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_cancel_unknown_target_1',
+                'method': 'bridge.cancel',
+                'params': {'targetRequestId': 'req_not_in_flight'},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'not_found', 'targetRequestId': 'req_not_in_flight'}
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_duplicate_inflight_ids_do_not_emit_late_results(
+    fake_bridge_modules: dict[str, str],
+) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_duplicate_1',
+                'method': 'query.execute',
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {'delayMs': 200}},
+                'timeoutMs': 1000,
+            },
+        )
+        _send(
+            proc,
+            {
+                'id': 'req_duplicate_1',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        duplicate = _read_json_line(proc)
+        assert duplicate['id'] == 'req_duplicate_1'
+        assert duplicate['error']['code'] == 'BRIDGE_PROTOCOL_ERROR'
+        assert duplicate['error']['meta'] == {'id': 'req_duplicate_1'}
+
+        sleep(0.35)
+        _send(
+            proc,
+            {
+                'id': 'req_after_duplicate_1',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        after_duplicate = _read_json_line(proc)
+        assert after_duplicate['id'] == 'req_after_duplicate_1'
+        assert after_duplicate['result'] == {'status': 'ok', 'databaseReachable': None, 'activeTransactions': 0}
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_healthcheck_can_probe_database(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_health_database_1',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': True},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {
+            'status': 'ok',
+            'databaseReachable': True,
+            'activeTransactions': 0,
+        }
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
         assert proc.wait(timeout=5) == 0
     finally:
         if proc.poll() is None:
@@ -718,6 +918,13 @@ def test_js_bridge_runtime_protocol_error_timeout_and_cancel(fake_bridge_modules
         validation = _read_json_line(proc)
         assert validation['error']['code'] == 'PRISMA_VALIDATION_ERROR'
         assert validation['error']['prismaCode'] == 'P2009'
+        assert validation['error']['meta'] == {
+            'model': 'User',
+            'action': 'validationError',
+            'transactionId': None,
+            'kind': 'UnknownArgument',
+            'argumentPath': ['where', 'emailz'],
+        }
 
         _send(
             proc,

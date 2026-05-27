@@ -570,7 +570,7 @@ class BaseJSBridgeEngine:
                 try:
                     data = self._read_stdout(timedelta(seconds=remaining))
                 except errors.JSBridgeError as exc:
-                    if exc.code == 'BRIDGE_TIMEOUT':
+                    if exc.code in {'BRIDGE_TIMEOUT', 'BRIDGE_PROTOCOL_ERROR'}:
                         self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
                     if exc.code == 'BRIDGE_PROCESS_EXITED' and tx_id is not None:
                         meta = exc.meta.copy()
@@ -594,6 +594,7 @@ class BaseJSBridgeEngine:
                     continue
 
                 if data.get('id') != request_id:
+                    self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
                     raise errors.JSBridgeError(
                         code='BRIDGE_PROTOCOL_ERROR',
                         message='JS bridge response ID did not match the in-flight request.',
@@ -601,6 +602,7 @@ class BaseJSBridgeEngine:
                     )
 
                 if ('result' in data) == ('error' in data):
+                    self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
                     raise errors.JSBridgeError(
                         code='BRIDGE_PROTOCOL_ERROR',
                         message='JS bridge response must contain exactly one of result or error.',
@@ -610,6 +612,7 @@ class BaseJSBridgeEngine:
                 if 'error' in data:
                     error = data['error']
                     if not isinstance(error, dict):
+                        self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
                         raise errors.JSBridgeError(
                             code='BRIDGE_PROTOCOL_ERROR',
                             message='JS bridge error payload must be an object.',
