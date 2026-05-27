@@ -477,11 +477,11 @@ class BridgeRuntime {
     };
   }
 
-  async shutdown() {
+  async shutdown(currentRequestId = null) {
     this.acceptingRequests = false;
     this.shuttingDown = true;
     for (const [id, record] of this.inFlight) {
-      if (id !== record.currentRequestId) {
+      if (id !== currentRequestId) {
         record.controller.abort(cancelledFailure(id, 'bridge-shutdown'));
       }
     }
@@ -746,7 +746,7 @@ class BridgeRuntime {
       case 'client.disconnect':
         return await this.disconnect(request.params);
       case 'bridge.shutdown':
-        return await this.shutdown();
+        return await this.shutdown(request.id);
       case 'bridge.cancel':
         return await this.cancel(request.params);
       case 'query.execute':
@@ -827,7 +827,6 @@ class BridgeRuntime {
     const controller = new AbortController();
     const record = {
       id: request.id,
-      currentRequestId: request.id,
       controller,
       responded: false,
     };

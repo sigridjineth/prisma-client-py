@@ -454,6 +454,32 @@ def test_js_bridge_runtime_batches_model_and_raw_operations(fake_bridge_modules:
             proc.kill()
 
 
+def test_js_bridge_runtime_shutdown_cancels_in_flight_requests(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_shutdown_target_1',
+                'method': 'query.execute',
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {'delayMs': 500}},
+                'timeoutMs': 1000,
+            },
+        )
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+
+        frames = [_read_json_line(proc), _read_json_line(proc)]
+        by_id = {frame['id']: frame for frame in frames}
+        assert by_id['req_shutdown_target_1']['error']['code'] == 'BRIDGE_CANCELLED'
+        assert by_id['req_shutdown_1']['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
 def test_js_bridge_runtime_protocol_error_timeout_and_cancel(fake_bridge_modules: dict[str, str]) -> None:
     proc = _spawn_runtime(fake_bridge_modules)
     try:
