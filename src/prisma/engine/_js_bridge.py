@@ -271,6 +271,7 @@ class BaseJSBridgeEngine:
         self.provider = provider
         self._log_queries = log_queries
         self._next_request_id = 0
+        self._request_lock = threading.RLock()
         self.process = None
 
     def _bridge_script(self) -> Path:
@@ -480,55 +481,56 @@ class BaseJSBridgeEngine:
         timeout_ms: int = _DEFAULT_REQUEST_TIMEOUT_MS,
         request_id_prefix: str = 'req',
     ) -> Any:
-        request_id = self._next_id(request_id_prefix)
-        request: dict[str, Any] = {
-            'id': request_id,
-            'method': method,
-            'params': params,
-            'timeoutMs': timeout_ms,
-            'clientVersion': 'prisma-client-py',
-        }
-        if tx_id is not None:
-            request['transactionId'] = str(tx_id)
+        with self._request_lock:
+            request_id = self._next_id(request_id_prefix)
+            request: dict[str, Any] = {
+                'id': request_id,
+                'method': method,
+                'params': params,
+                'timeoutMs': timeout_ms,
+                'clientVersion': 'prisma-client-py',
+            }
+            if tx_id is not None:
+                request['transactionId'] = str(tx_id)
 
-        self._write_request(request)
+            self._write_request(request)
 
-        while True:
-            try:
-                data = self._read_stdout(timedelta(milliseconds=timeout_ms))
-            except errors.JSBridgeError as exc:
-                if exc.code == 'BRIDGE_TIMEOUT':
-                    self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
-                raise
+            while True:
+                try:
+                    data = self._read_stdout(timedelta(milliseconds=timeout_ms))
+                except errors.JSBridgeError as exc:
+                    if exc.code == 'BRIDGE_TIMEOUT':
+                        self._close_process(timeout=_TIMED_OUT_REQUEST_CLOSE_TIMEOUT)
+                    raise
 
-            if data.get('method') == 'bridge.ready':
-                continue
+                if data.get('method') == 'bridge.ready':
+                    continue
 
-            if data.get('id') != request_id:
-                raise errors.JSBridgeError(
-                    code='BRIDGE_PROTOCOL_ERROR',
-                    message='JS bridge response ID did not match the in-flight request.',
-                    meta={'expected': request_id, 'got': data.get('id')},
-                )
-
-            if ('result' in data) == ('error' in data):
-                raise errors.JSBridgeError(
-                    code='BRIDGE_PROTOCOL_ERROR',
-                    message='JS bridge response must contain exactly one of result or error.',
-                    meta={'id': request_id},
-                )
-
-            if 'error' in data:
-                error = data['error']
-                if not isinstance(error, dict):
+                if data.get('id') != request_id:
                     raise errors.JSBridgeError(
                         code='BRIDGE_PROTOCOL_ERROR',
-                        message='JS bridge error payload must be an object.',
+                        message='JS bridge response ID did not match the in-flight request.',
+                        meta={'expected': request_id, 'got': data.get('id')},
+                    )
+
+                if ('result' in data) == ('error' in data):
+                    raise errors.JSBridgeError(
+                        code='BRIDGE_PROTOCOL_ERROR',
+                        message='JS bridge response must contain exactly one of result or error.',
                         meta={'id': request_id},
                     )
-                raise _bridge_error_to_exception(error)
 
-            return data['result']
+                if 'error' in data:
+                    error = data['error']
+                    if not isinstance(error, dict):
+                        raise errors.JSBridgeError(
+                            code='BRIDGE_PROTOCOL_ERROR',
+                            message='JS bridge error payload must be an object.',
+                            meta={'id': request_id},
+                        )
+                    raise _bridge_error_to_exception(error)
+
+                return data['result']
 
     def _connect(self, timeout: timedelta, datasources: list[DatasourceOverride] | None) -> None:
         if self.provider != 'postgresql':

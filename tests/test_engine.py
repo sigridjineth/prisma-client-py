@@ -192,6 +192,70 @@ def test_js_bridge_request_timeout_closes_process_before_late_response(tmp_path:
         engine._request('bridge.healthcheck', {}, timeout_ms=1, request_id_prefix='req_health')
 
 
+def test_js_bridge_request_serializes_concurrent_threads(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    engine.process = cast(Any, FakeJSBridgeProcess())  # bypass connect; patched I/O targets request serialization only
+
+    writes: list[str] = []
+    results: dict[str, Any] = {}
+    failures: list[BaseException] = []
+    writes_lock = threading.Lock()
+    read_calls_lock = threading.Lock()
+    first_read_started = threading.Event()
+    release_first_response = threading.Event()
+    second_request_written = threading.Event()
+    read_calls = 0
+
+    def write_request(request: dict[str, Any]) -> None:
+        request_id = str(request['id'])
+        with writes_lock:
+            writes.append(request_id)
+        if request_id == 'req_query_2':
+            second_request_written.set()
+
+    def read_stdout(_timeout: timedelta) -> dict[str, Any]:
+        nonlocal read_calls
+        with read_calls_lock:
+            read_calls += 1
+            call = read_calls
+
+        if call == 1:
+            first_read_started.set()
+            assert release_first_response.wait(timeout=5)
+            return {'id': 'req_query_1', 'result': {'call': 1}}
+
+        return {'id': 'req_query_2', 'result': {'call': 2}}
+
+    def request(label: str) -> None:
+        try:
+            results[label] = engine._request('query.graphql', {'label': label}, request_id_prefix='req_query')
+        except BaseException as exc:  # pragma: no cover - surfaced by assertions below
+            failures.append(exc)
+
+    first = threading.Thread(target=request, args=('first',), daemon=True)
+    second = threading.Thread(target=request, args=('second',), daemon=True)
+    monkeypatch.setattr(engine, '_write_request', write_request)
+    monkeypatch.setattr(engine, '_read_stdout', read_stdout)
+
+    first.start()
+    assert first_read_started.wait(timeout=5)
+
+    try:
+        second.start()
+        assert not second_request_written.wait(timeout=0.1)
+    finally:
+        release_first_response.set()
+
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert failures == []
+    assert writes == ['req_query_1', 'req_query_2']
+    assert results == {'first': {'call': 1}, 'second': {'call': 2}}
+
+
 def test_js_bridge_does_not_spawn_rust_binary(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     bridge = tmp_path / 'bridge.mjs'
     bridge.write_text('process.exit(0)')
