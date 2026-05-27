@@ -19,6 +19,7 @@ from prisma.binaries import platform
 from prisma.engine.query import QueryEngine
 from prisma.engine._js_bridge import (
     SyncJSBridgeEngine,
+    get_engine_mode,
     serialize_bridge_value,
     deserialize_bridge_value,
     bridge_raw_rows_to_legacy_result,
@@ -93,6 +94,22 @@ def test_stopping_engine_on_closed_loop() -> None:
     with no_event_loop():
         engine = QueryEngine(dml_path=Path.cwd())
         engine.stop()
+
+
+def test_get_engine_mode_validates_flag_values() -> None:
+    assert get_engine_mode() == 'rust-legacy'
+
+    with temp_env_update({'PRISMA_PY_ENGINE': ' js-bridge '}):
+        assert get_engine_mode() == 'js-bridge'
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'rust-legacy'}):
+        assert get_engine_mode() == 'rust-legacy'
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'binary'}):
+        with pytest.raises(errors.InvalidEngineModeError) as exc:
+            get_engine_mode()
+
+    assert exc.value.value == 'binary'
 
 
 class FakeJSBridgeProcess:
@@ -189,6 +206,24 @@ def test_js_bridge_generated_package_requires_prisma_client_output(tmp_path: Pat
     assert 'npm install && npm run generate' in str(exc.value)
 
 
+def test_js_bridge_generated_package_requires_node_dependencies(tmp_path: Path) -> None:
+    generated = tmp_path / 'js_bridge'
+    generated.joinpath('generated', 'prisma').mkdir(parents=True)
+    generated.joinpath('package.json').write_text('{"private": true}')
+    generated.joinpath('runtime.mjs').write_text('process.exit(0)')
+    generated.joinpath('generated', 'prisma', 'client.ts').write_text('export class PrismaClient {}')
+
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine._prepare_generated_package(generated)
+
+    assert exc.value.code == 'JS_BRIDGE_DEPENDENCIES_NOT_FOUND'
+    assert exc.value.meta['package'] == 'tsx'
+    assert exc.value.meta['install'] == 'npm install && npm run generate'
+    assert 'JS bridge Node dependencies are not installed' in str(exc.value)
+
+
 def test_js_bridge_generated_package_uses_local_ts_client(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     generated = tmp_path / 'js_bridge'
     generated.joinpath('generated', 'prisma').mkdir(parents=True)
@@ -213,6 +248,43 @@ def test_js_bridge_generated_package_uses_local_ts_client(monkeypatch: MonkeyPat
     assert fake_process.args == ['node', '--import', 'tsx', 'runtime.mjs']
     assert fake_process.env is not None
     assert fake_process.env['PRISMA_PY_BRIDGE_CLIENT_MODULE'] == './generated/prisma/client.ts'
+
+
+def test_js_bridge_node_binary_override_reports_missing_node(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    bridge = tmp_path / 'bridge.mjs'
+    bridge.write_text('process.exit(0)')
+
+    def popen(*args: object, **kwargs: object) -> FakeJSBridgeProcess:  # noqa: ARG001
+        raise FileNotFoundError('missing node')
+
+    monkeypatch.setattr('prisma.engine._js_bridge.subprocess.Popen', popen)
+
+    with temp_env_update(
+        {
+            'PRISMA_PY_NODE_BINARY': 'missing-node-for-prisma-py',
+            'PRISMA_PY_JS_BRIDGE_SCRIPT': str(bridge),
+        }
+    ):
+        engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+        with pytest.raises(errors.JSBridgeError) as exc:
+            engine._spawn_process()
+
+    assert exc.value.code == 'NODE_NOT_FOUND'
+    assert exc.value.meta == {'executable': 'missing-node-for-prisma-py'}
+
+
+def test_js_bridge_deferred_provider_fails_before_node_spawn(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    def spawn(self: SyncJSBridgeEngine) -> FakeJSBridgeProcess:  # noqa: ARG001
+        raise AssertionError('Deferred providers must fail before starting Node')
+
+    monkeypatch.setattr(SyncJSBridgeEngine, '_spawn_process', spawn)
+
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='sqlite')
+    with pytest.raises(errors.JSBridgeError) as exc:
+        engine.connect(timeout=timedelta(seconds=1))
+
+    assert exc.value.code == 'PROVIDER_UNSUPPORTED'
+    assert exc.value.meta == {'provider': 'sqlite', 'supported': ['postgresql']}
 
 
 def test_js_bridge_scalar_deserialization() -> None:

@@ -289,12 +289,17 @@ class BaseJSBridgeEngine:
         tsx_package = package_dir / 'node_modules' / 'tsx'
         if not tsx_package.exists():
             raise errors.JSBridgeError(
-                code='PRISMA_CLIENT_NOT_FOUND',
+                code='JS_BRIDGE_DEPENDENCIES_NOT_FOUND',
                 message=(
                     'JS bridge Node dependencies are not installed. '
                     f'Run `npm install && npm run generate` in {package_dir}.'
                 ),
-                meta={'path': str(tsx_package), 'packageDir': str(package_dir)},
+                meta={
+                    'path': str(tsx_package),
+                    'packageDir': str(package_dir),
+                    'package': 'tsx',
+                    'install': 'npm install && npm run generate',
+                },
             )
 
         return {JS_BRIDGE_CLIENT_MODULE_ENV: client_module}
