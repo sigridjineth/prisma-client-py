@@ -535,6 +535,39 @@ def test_js_bridge_does_not_spawn_rust_binary(monkeypatch: MonkeyPatch, tmp_path
     assert '"method": "bridge.shutdown"' in written
 
 
+@pytest.mark.asyncio
+async def test_async_js_bridge_does_not_spawn_rust_binary(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    bridge = tmp_path / 'bridge.mjs'
+    bridge.write_text('process.exit(0)')
+    fake_process = FakeJSBridgeProcess()
+
+    def popen(args: list[str], **kwargs: object) -> FakeJSBridgeProcess:
+        fake_process.args = args
+        fake_process.env = kwargs.get('env')  # type: ignore[assignment]
+        return fake_process
+
+    def ensure(*args: object, **kwargs: object) -> None:
+        raise AssertionError('Rust query engine binary resolution should not run in JS bridge mode')
+
+    monkeypatch.setattr('prisma.engine._js_bridge.subprocess.Popen', popen)
+    monkeypatch.setattr(utils, 'ensure', ensure)
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge', 'PRISMA_PY_JS_BRIDGE_SCRIPT': str(bridge)}):
+        engine = AsyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+        await engine.connect(timeout=timedelta(seconds=1))
+        await engine.aclose(timeout=timedelta(seconds=1))
+
+    assert fake_process.args is not None
+    assert 'prisma-query-engine' not in ' '.join(fake_process.args)
+    assert fake_process.env is not None
+    assert fake_process.env['PRISMA_PY_BRIDGE_PROVIDER'] == 'postgresql'
+    assert 'PRISMA_QUERY_ENGINE_BINARY' not in fake_process.env
+    written = fake_process.stdin.getvalue()
+    assert '"method": "client.connect"' in written
+    assert '"method": "client.disconnect"' in written
+    assert '"method": "bridge.shutdown"' in written
+
+
 def test_js_bridge_default_script_matches_generated_package(tmp_path: Path) -> None:
     generated = tmp_path / 'js_bridge'
     generated.mkdir()

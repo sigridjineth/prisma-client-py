@@ -396,15 +396,22 @@ class SyncBasePrisma(BasePrisma[SyncAbstractEngine]):
 
         It is required to call this before accessing data.
         """
+        created_engine = False
         if self._internal_engine is None:
             self._internal_engine = self._create_engine(dml_path=self._packaged_schema_path)
+            created_engine = True
 
-        timeout, datasources = self._prepare_connect_args(timeout=timeout)
+        try:
+            timeout, datasources = self._prepare_connect_args(timeout=timeout)
 
-        self._internal_engine.connect(
-            timeout=timeout,
-            datasources=datasources,
-        )
+            self._internal_engine.connect(
+                timeout=timeout,
+                datasources=datasources,
+            )
+        except Exception:
+            if created_engine:
+                self._internal_engine = None
+            raise
 
     def disconnect(self, timeout: float | timedelta | None = None) -> None:
         """Disconnect the Prisma query engine."""
@@ -536,15 +543,22 @@ class AsyncBasePrisma(BasePrisma[AsyncAbstractEngine]):
 
         It is required to call this before accessing data.
         """
+        created_engine = False
         if self._internal_engine is None:
             self._internal_engine = self._create_engine(dml_path=self._packaged_schema_path)
+            created_engine = True
 
-        timeout, datasources = self._prepare_connect_args(timeout=timeout)
+        try:
+            timeout, datasources = self._prepare_connect_args(timeout=timeout)
 
-        await self._internal_engine.connect(
-            timeout=timeout,
-            datasources=datasources,
-        )
+            await self._internal_engine.connect(
+                timeout=timeout,
+                datasources=datasources,
+            )
+        except Exception:
+            if created_engine:
+                self._internal_engine = None
+            raise
 
     async def disconnect(self, timeout: float | timedelta | None = None) -> None:
         """Disconnect the Prisma query engine."""

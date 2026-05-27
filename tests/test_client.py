@@ -1,7 +1,8 @@
 import warnings
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, Optional
 from pathlib import Path
 from datetime import timedelta
+from typing_extensions import override
 
 import httpx
 import pytest
@@ -11,17 +12,54 @@ from pytest_mock import MockerFixture
 from prisma import ENGINE_TYPE, SCHEMA_PATH, Prisma, errors, get_client
 from prisma.types import HttpConfig
 from prisma.utils import temp_env_update
-from prisma.engine import AsyncQueryEngine, AsyncJSBridgeEngine
+from prisma._types import Datasource, DatasourceOverride
+from prisma.engine import SyncQueryEngine, AsyncQueryEngine, SyncJSBridgeEngine, AsyncJSBridgeEngine
 from prisma.testing import reset_client
 from prisma.cli.prisma import run
 from prisma.engine.http import HTTPEngine
-from prisma.engine.errors import AlreadyConnectedError, InvalidEngineModeError
+from prisma._base_client import SyncBasePrisma
+from prisma.engine.errors import JSBridgeError, AlreadyConnectedError, InvalidEngineModeError
 from prisma.http_abstract import DEFAULT_CONFIG
+from prisma.generator.models import EngineType
 
 from .utils import Testdir, patch_method
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+
+
+class SyncPrismaForTest(SyncBasePrisma):
+    __slots__ = ()
+
+    def __init__(
+        self,
+        *,
+        active_provider: str = 'postgresql',
+        log_queries: bool = False,
+        datasource: Optional[DatasourceOverride] = None,
+    ) -> None:
+        super().__init__(
+            use_dotenv=False,
+            http=None,
+            log_queries=log_queries,
+            datasource=datasource,
+            connect_timeout=timedelta(seconds=1),
+        )
+        self._set_generated_properties(
+            schema_path=SCHEMA_PATH,
+            engine_type=EngineType.binary,
+            packaged_schema_path=SCHEMA_PATH,
+            active_provider=active_provider,
+            prisma_models=set(),
+            preview_features=set(),
+            relational_field_mappings={},
+            default_datasource_name='db',
+        )
+
+    @property
+    @override
+    def _default_datasource(self) -> Datasource:
+        return {'name': 'db', 'url': 'postgresql://example.invalid/prisma'}
 
 
 @pytest.mark.asyncio
@@ -107,6 +145,85 @@ def test_engine_selection_env_flag() -> None:
     with temp_env_update({'PRISMA_PY_ENGINE': 'invalid'}):
         with pytest.raises(InvalidEngineModeError):
             client._create_engine()
+
+
+def test_sync_engine_selection_env_flag() -> None:
+    client = SyncPrismaForTest()
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'rust-legacy'}):
+        assert client._engine_class is SyncQueryEngine
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge'}):
+        assert client._engine_class is SyncJSBridgeEngine
+        assert isinstance(client._create_engine(), SyncJSBridgeEngine)
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'invalid'}):
+        with pytest.raises(InvalidEngineModeError):
+            client._create_engine()
+
+
+def test_sync_js_bridge_connect_failure_clears_client_state() -> None:
+    client = SyncPrismaForTest(active_provider='sqlite')
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge'}):
+        with pytest.raises(JSBridgeError) as exc:
+            client.connect()
+
+    assert exc.value.code == 'PROVIDER_UNSUPPORTED'
+    assert not client.is_connected()
+
+
+@pytest.mark.asyncio
+async def test_async_js_bridge_connect_failure_clears_client_state() -> None:
+    client = Prisma()
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge'}):
+        with pytest.raises(JSBridgeError) as exc:
+            await client.connect()
+
+    assert exc.value.code == 'PROVIDER_UNSUPPORTED'
+    assert not client.is_connected()
+
+
+def test_sync_js_bridge_connect_forwards_datasource_and_log_queries(mocker: MockerFixture) -> None:
+    client = SyncPrismaForTest(
+        log_queries=True,
+        datasource={'url': 'postgresql://example.invalid/override'},
+    )
+    mocked_connect = mocker.patch.object(SyncJSBridgeEngine, 'connect')
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge'}):
+        client.connect(timeout=timedelta(seconds=3))
+
+    engine = client._engine
+    assert isinstance(engine, SyncJSBridgeEngine)
+    assert engine._log_queries is True
+    mocked_connect.assert_called_once_with(
+        timeout=timedelta(seconds=3),
+        datasources=[{'url': 'postgresql://example.invalid/override', 'name': 'db'}],
+    )
+    client.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_async_js_bridge_connect_forwards_datasource_and_log_queries(mocker: MockerFixture) -> None:
+    client = Prisma(
+        log_queries=True,
+        datasource={'url': 'postgresql://example.invalid/override'},
+    )
+    mocked_connect = mocker.patch.object(AsyncJSBridgeEngine, 'connect', new=AsyncMock())
+
+    with temp_env_update({'PRISMA_PY_ENGINE': 'js-bridge'}):
+        await client.connect(timeout=timedelta(seconds=3))
+
+    engine = client._engine
+    assert isinstance(engine, AsyncJSBridgeEngine)
+    assert engine._log_queries is True
+    mocked_connect.assert_called_once_with(
+        timeout=timedelta(seconds=3),
+        datasources=[{'url': 'postgresql://example.invalid/override', 'name': 'db'}],
+    )
+    await client.disconnect()
 
 
 @pytest.mark.asyncio
