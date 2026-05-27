@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Type, Generic, Optional, cast
 from pathlib import Path
 from contextvars import ContextVar
-from typing_extensions import override
+from typing_extensions import Literal, TypedDict, override
 
 from jinja2 import Environment, StrictUndefined, FileSystemLoader
 from pydantic import BaseModel, ValidationError
@@ -57,7 +57,15 @@ JS_BRIDGE_TEMPLATES = (
     'js_bridge/bridge.config.json.jinja',
     'js_bridge/README.md.jinja',
 )
-JS_BRIDGE_DEFERRED_PROVIDERS = {
+
+
+class JSBridgeDeferredProvider(TypedDict):
+    support_level: Literal['Deferred', 'Unsupported']
+    adapter_package: Optional[str]
+    message: str
+
+
+JS_BRIDGE_DEFERRED_PROVIDERS: Dict[str, JSBridgeDeferredProvider] = {
     'sqlite': {
         'support_level': 'Deferred',
         'adapter_package': '@prisma/adapter-better-sqlite3',

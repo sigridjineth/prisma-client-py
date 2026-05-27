@@ -74,6 +74,27 @@ docstring-code-format = true
 "docs/**.py" = ["T201", "T203"]
 "pipelines/**.py" = ["T201", "T203"]
 
+[tool.pyrefly]
+project-includes = [
+    "src/prisma/engine/_js_bridge.py",
+    "tests/test_engine.py",
+    "tests/prisma7_js_bridge_contracts/test_contracts.py",
+    "tests/prisma7_js_bridge_contracts/test_live_postgres.py",
+]
+project-excludes = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/*venv*/**",
+    "src/prisma/_vendor/**",
+]
+search-path = [
+    "src",
+    ".",
+]
+disable-project-excludes-heuristics = true
+use-ignore-files = false
+python-version = "3.9.0"
+
 [tool.pyright]
 include = [
     "src",

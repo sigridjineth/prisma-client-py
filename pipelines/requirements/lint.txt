@@ -2,6 +2,7 @@
 -r node.txt
 -r dev.txt
 -r deps/pyright.txt
+-r deps/pyrefly.txt
 -r deps/ruff.txt
 -r deps/mypy.txt
 -r deps/pydantic.txt

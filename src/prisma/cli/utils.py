@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import sys
 import logging
+import warnings
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Any,
     List,
     Type,
@@ -26,7 +28,19 @@ from .._types import Literal
 log: logging.Logger = logging.getLogger(__name__)
 
 
-class PrismaCLI(click.MultiCommand):
+if TYPE_CHECKING:
+    ClickMultiCommand = click.Group
+else:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            'ignore',
+            message="'MultiCommand' is deprecated and will be removed in Click 9.0. Use 'Group' instead.",
+            category=DeprecationWarning,
+        )
+        ClickMultiCommand = click.MultiCommand
+
+
+class PrismaCLI(ClickMultiCommand):
     base_package: str = 'prisma.cli.commands'
     folder: Path = Path(__file__).parent / 'commands'
 
@@ -78,7 +92,7 @@ class PathlibPath(click.Path):
         return Path(str(super().convert(value, param, ctx)))
 
 
-class EnumChoice(click.Choice):
+class EnumChoice(click.Choice[str]):
     """A Click choice argument created from an Enum
 
     choices are gathered from enum values, not their python keys, e.g.
