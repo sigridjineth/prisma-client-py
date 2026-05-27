@@ -50,7 +50,14 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
                     err.name = 'PrismaClientValidationError';
                     err.code = 'P2009';
                     throw err;
-                  }
+                  },
+                  scalarEcho: async (args) => ({
+                    whenIsDate: args.data.when instanceof Date,
+                    whenIso: args.data.when.toISOString(),
+                    amount: args.data.amount,
+                    blobText: Buffer.from(args.data.blob).toString('utf8'),
+                    jsonNested: args.data.meta.nested[0],
+                  }),
                 };
               }
               async $connect() {
@@ -344,6 +351,48 @@ def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules
             },
         )
         assert _read_json_line(proc)['error']['code'] == 'TRANSACTION_CLOSED'
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_decodes_tagged_scalar_inputs(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_scalar_decode_1',
+                'method': 'query.execute',
+                'params': {
+                    'kind': 'model',
+                    'model': 'User',
+                    'action': 'scalarEcho',
+                    'args': {
+                        'data': {
+                            'when': {'$type': 'DateTime', 'value': '2026-05-26T05:54:00.123Z'},
+                            'amount': {'$type': 'Decimal', 'value': '123.45'},
+                            'blob': {'$type': 'Bytes', 'encoding': 'base64', 'value': 'aGVsbG8='},
+                            'meta': {'$type': 'Json', 'value': {'nested': ['ok']}},
+                        }
+                    },
+                },
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {
+            'whenIsDate': True,
+            'whenIso': '2026-05-26T05:54:00.123Z',
+            'amount': '123.45',
+            'blobText': 'hello',
+            'jsonNested': 'ok',
+        }
 
         _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
         assert _read_json_line(proc)['result'] == {'status': 'shutdown'}

@@ -257,6 +257,9 @@ function decodeTaggedScalars(value) {
   if (value.$type === 'DateTime') {
     return new Date(value.value);
   }
+  if (value.$type === 'Decimal') {
+    return value.value;
+  }
   if (value.$type === 'Bytes' && value.encoding === 'base64') {
     return Buffer.from(value.value, 'base64');
   }

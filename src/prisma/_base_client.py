@@ -26,7 +26,12 @@ from ._builder import QueryBuilder
 from ._metrics import Metrics
 from ._registry import get_client
 from .generator.models import EngineType
-from .engine._js_bridge import get_engine_mode, deserialize_bridge_value, bridge_raw_rows_to_legacy_result
+from .engine._js_bridge import (
+    get_engine_mode,
+    serialize_bridge_value,
+    deserialize_bridge_value,
+    bridge_raw_rows_to_legacy_result,
+)
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -333,7 +338,7 @@ class BasePrisma(Generic[_EngineT]):
                 'params': {
                     'action': 'queryRaw',
                     'sql': builder.arguments.get('query'),
-                    'parameters': list(builder.arguments.get('parameters', ())),
+                    'parameters': serialize_bridge_value(list(builder.arguments.get('parameters', ()))),
                     'resultShape': 'rows',
                 },
             }
@@ -344,7 +349,7 @@ class BasePrisma(Generic[_EngineT]):
                 'params': {
                     'action': 'executeRaw',
                     'sql': builder.arguments.get('query'),
-                    'parameters': list(builder.arguments.get('parameters', ())),
+                    'parameters': serialize_bridge_value(list(builder.arguments.get('parameters', ()))),
                     'resultShape': 'count',
                 },
             }
@@ -360,15 +365,17 @@ class BasePrisma(Generic[_EngineT]):
             result_shape = 'scalar'
 
         action = _JS_BRIDGE_ACTION_MAPPING[builder.method]
+        args = builder.arguments
+        if builder.include is not None:
+            args = {**builder.arguments, 'include': builder.include}
+
         params: dict[str, Any] = {
             'kind': 'model',
             'model': model.__prisma_model__,
             'action': action,
-            'args': builder.arguments,
+            'args': serialize_bridge_value(args),
             'resultShape': result_shape,
         }
-        if builder.include is not None:
-            params['args'] = {**builder.arguments, 'include': builder.include}
         if builder.root_selection is not None:
             params['rootSelection'] = builder.root_selection
 

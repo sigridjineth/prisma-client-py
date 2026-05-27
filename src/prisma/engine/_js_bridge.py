@@ -16,9 +16,10 @@ from datetime import datetime, timezone, timedelta
 from typing_extensions import Literal, override
 
 from . import utils, errors
+from .. import fields
 from .._types import TransactionId
 from .._compat import get_running_loop
-from .._builder import dumps
+from .._builder import dumps, serialize_datetime
 from ._abstract import SyncAbstractEngine, AsyncAbstractEngine
 from .._constants import DEFAULT_CONNECT_TIMEOUT
 
@@ -32,6 +33,7 @@ __all__ = (
     'JS_BRIDGE_NODE_ENV',
     'JS_BRIDGE_PROTOCOL_VERSION',
     'get_engine_mode',
+    'serialize_bridge_value',
     'deserialize_bridge_value',
     'bridge_raw_rows_to_legacy_result',
     'SyncJSBridgeEngine',
@@ -75,6 +77,44 @@ def _parse_datetime(value: str) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def serialize_bridge_value(value: Any) -> Any:
+    if isinstance(value, fields.Json):
+        return {
+            '$type': 'Json',
+            'value': value.data,
+        }
+    if isinstance(value, fields.Base64):
+        return {
+            '$type': 'Bytes',
+            'encoding': 'base64',
+            'value': str(value),
+        }
+    if isinstance(value, datetime):
+        return {
+            '$type': 'DateTime',
+            'value': serialize_datetime(value),
+        }
+    if isinstance(value, decimal.Decimal):
+        return {
+            '$type': 'Decimal',
+            'value': str(value),
+        }
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {
+            '$type': 'Bytes',
+            'encoding': 'base64',
+            'value': base64.b64encode(bytes(value)).decode('ascii'),
+        }
+    if isinstance(value, list):
+        return [serialize_bridge_value(item) for item in value]
+    if isinstance(value, (tuple, set)):
+        return [serialize_bridge_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: serialize_bridge_value(item) for key, item in value.items()}
+
+    return value
 
 
 def deserialize_bridge_value(value: Any) -> Any:

@@ -1,16 +1,17 @@
 import signal
 import asyncio
+import decimal
 import contextlib
 from io import StringIO
 from typing import Dict, List, Optional, Generator
 from pathlib import Path
-from datetime import timedelta
+from datetime import datetime, timezone, timedelta
 
 import pytest
 from pytest_subprocess import FakeProcess
 from _pytest.monkeypatch import MonkeyPatch
 
-from prisma import BINARY_PATHS, Prisma, config
+from prisma import BINARY_PATHS, Prisma, config, fields
 from prisma.utils import temp_env_update
 from prisma.engine import utils, errors
 from prisma._compat import get_running_loop
@@ -18,6 +19,7 @@ from prisma.binaries import platform
 from prisma.engine.query import QueryEngine
 from prisma.engine._js_bridge import (
     SyncJSBridgeEngine,
+    serialize_bridge_value,
     deserialize_bridge_value,
     bridge_raw_rows_to_legacy_result,
 )
@@ -219,6 +221,24 @@ def test_js_bridge_scalar_deserialization() -> None:
     assert deserialize_bridge_value({'$type': 'Bytes', 'encoding': 'base64', 'value': 'AQID'}) == b'\x01\x02\x03'
     assert deserialize_bridge_value({'$type': 'DateTime', 'value': '2026-05-26T05:54:00.000Z'}).tzinfo is not None
     assert deserialize_bridge_value({'nested': [{'$type': 'JsonNull'}]}) == {'nested': [None]}
+
+
+def test_js_bridge_scalar_serialization_tags_python_values_for_prisma_js_client() -> None:
+    assert serialize_bridge_value(
+        {
+            'when': datetime(2026, 5, 26, 5, 54, 0, 123456, tzinfo=timezone.utc),
+            'amount': decimal.Decimal('123.45'),
+            'encoded': fields.Base64.encode(b'hello'),
+            'raw': b'\x01\x02\x03',
+            'json': fields.Json({'nested': [1, None, {'ok': True}]}),
+        }
+    ) == {
+        'when': {'$type': 'DateTime', 'value': '2026-05-26T05:54:00.123000+00:00'},
+        'amount': {'$type': 'Decimal', 'value': '123.45'},
+        'encoded': {'$type': 'Bytes', 'encoding': 'base64', 'value': 'aGVsbG8='},
+        'raw': {'$type': 'Bytes', 'encoding': 'base64', 'value': 'AQID'},
+        'json': {'$type': 'Json', 'value': {'nested': [1, None, {'ok': True}]}},
+    }
 
 
 def test_js_bridge_raw_rows_to_legacy_result() -> None:
