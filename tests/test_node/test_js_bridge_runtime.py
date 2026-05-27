@@ -236,6 +236,32 @@ def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules
         _send(
             proc,
             {
+                'id': 'req_tx_nested_start_1',
+                'method': 'transaction.start',
+                'transactionId': tx_id,
+                'params': {'timeoutMs': 5000, 'maxWaitMs': 1000, 'isolationLevel': None},
+                'timeoutMs': 1000,
+            },
+        )
+        nested = _read_json_line(proc)
+        assert nested['id'] == 'req_tx_nested_start_1'
+        assert nested['error']['code'] == 'TRANSACTION_NESTED_UNSUPPORTED'
+        assert nested['error']['meta'] == {'outerTransactionId': tx_id}
+
+        _send(
+            proc,
+            {
+                'id': 'req_health_tx_after_nested_1',
+                'method': 'bridge.healthcheck',
+                'params': {'requireDatabase': False},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result']['activeTransactions'] == 1
+
+        _send(
+            proc,
+            {
                 'id': 'req_tx_query_1',
                 'method': 'query.execute',
                 'transactionId': tx_id,

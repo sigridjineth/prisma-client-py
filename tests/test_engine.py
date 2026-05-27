@@ -1,6 +1,7 @@
 import signal
 import asyncio
 import decimal
+import warnings
 import threading
 import contextlib
 from io import StringIO
@@ -15,13 +16,16 @@ from _pytest.monkeypatch import MonkeyPatch
 
 from prisma import BINARY_PATHS, Prisma, config, errors as prisma_errors, fields
 from prisma.utils import temp_env_update
+from prisma._types import TransactionId
 from prisma.engine import utils, errors
 from prisma._compat import get_running_loop
 from prisma.binaries import platform
 from prisma.engine.query import QueryEngine
+from prisma._transactions import SyncTransactionManager, AsyncTransactionManager
 from prisma.engine._js_bridge import (
     _STDERR_TAIL_LIMIT,
     SyncJSBridgeEngine,
+    AsyncJSBridgeEngine,
     get_engine_mode,
     serialize_bridge_value,
     deserialize_bridge_value,
@@ -173,6 +177,114 @@ class TimeoutJSBridgeProcess(FakeJSBridgeProcess):
         self.stdout = BlockingJSBridgeStdout(
             '{"id":"req_query_1","result":{"late":true},"meta":{"protocolVersion":"2026-05-26.phase0.v1"}}\n'
         )
+
+
+class FakeTransactionClient:
+    def __init__(self, engine: object, tx_id: Optional[TransactionId] = None) -> None:
+        self._engine = engine
+        self._tx_id = tx_id
+
+    def is_transaction(self) -> bool:
+        return self._tx_id is not None
+
+    def _copy(self) -> 'FakeTransactionClient':
+        return FakeTransactionClient(self._engine)
+
+
+class FakeSyncLegacyTransactionEngine:
+    def __init__(self) -> None:
+        self.started = 0
+        self.last_content: Optional[str] = None
+
+    def start_transaction(self, *, content: str) -> TransactionId:
+        self.started += 1
+        self.last_content = content
+        return TransactionId('inner_sync_tx')
+
+
+class FakeAsyncLegacyTransactionEngine:
+    def __init__(self) -> None:
+        self.started = 0
+        self.last_content: Optional[str] = None
+
+    async def start_transaction(self, *, content: str) -> TransactionId:
+        self.started += 1
+        self.last_content = content
+        return TransactionId('inner_async_tx')
+
+
+def test_sync_js_bridge_nested_transaction_raises_deterministic_error(tmp_path: Path) -> None:
+    engine = SyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    client = FakeTransactionClient(engine, TransactionId('outer_sync_tx'))
+    manager = SyncTransactionManager(
+        client=cast(Any, client),
+        max_wait=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
+    )
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter('always')
+        with pytest.raises(errors.JSBridgeError) as exc:
+            manager.start()
+
+    assert captured == []
+    assert exc.value.code == 'TRANSACTION_NESTED_UNSUPPORTED'
+    assert exc.value.meta == {'outerTransactionId': 'outer_sync_tx'}
+
+
+@pytest.mark.asyncio
+async def test_async_js_bridge_nested_transaction_raises_deterministic_error(tmp_path: Path) -> None:
+    engine = AsyncJSBridgeEngine(dml_path=tmp_path / 'schema.prisma', provider='postgresql')
+    client = FakeTransactionClient(engine, TransactionId('outer_async_tx'))
+    manager = AsyncTransactionManager(
+        client=cast(Any, client),
+        max_wait=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
+    )
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter('always')
+        with pytest.raises(errors.JSBridgeError) as exc:
+            await manager.start()
+
+    assert captured == []
+    assert exc.value.code == 'TRANSACTION_NESTED_UNSUPPORTED'
+    assert exc.value.meta == {'outerTransactionId': 'outer_async_tx'}
+
+
+def test_sync_legacy_nested_transaction_still_warns() -> None:
+    engine = FakeSyncLegacyTransactionEngine()
+    client = FakeTransactionClient(engine, TransactionId('outer_sync_tx'))
+    manager = SyncTransactionManager(
+        client=cast(Any, client),
+        max_wait=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
+    )
+
+    with pytest.warns(UserWarning, match='already in a transaction'):
+        tx_client = manager.start()
+
+    assert engine.started == 1
+    assert engine.last_content is not None
+    assert tx_client._tx_id == TransactionId('inner_sync_tx')
+
+
+@pytest.mark.asyncio
+async def test_async_legacy_nested_transaction_still_warns() -> None:
+    engine = FakeAsyncLegacyTransactionEngine()
+    client = FakeTransactionClient(engine, TransactionId('outer_async_tx'))
+    manager = AsyncTransactionManager(
+        client=cast(Any, client),
+        max_wait=timedelta(seconds=1),
+        timeout=timedelta(seconds=2),
+    )
+
+    with pytest.warns(UserWarning, match='already in a transaction'):
+        tx_client = await manager.start()
+
+    assert engine.started == 1
+    assert engine.last_content is not None
+    assert tx_client._tx_id == TransactionId('inner_async_tx')
 
 
 def test_js_bridge_process_exit_error_includes_stderr_tail(tmp_path: Path) -> None:

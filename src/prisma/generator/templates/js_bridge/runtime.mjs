@@ -840,6 +840,11 @@ class BridgeRuntime {
       case 'query.batch':
         return await this.batch(request.params, request.transactionId ?? null);
       case 'transaction.start':
+        if (typeof request.transactionId === 'string' && request.transactionId.length > 0) {
+          throw new BridgeFailure('TRANSACTION_NESTED_UNSUPPORTED', 'Nested interactive transactions are not supported by the JS bridge.', {
+            meta: {outerTransactionId: request.transactionId},
+          });
+        }
         return await this.startTransaction(request.params);
       case 'transaction.commit':
         return await this.commitTransaction(request.transactionId);

@@ -262,6 +262,8 @@ def _bridge_error_to_exception(data: dict[str, Any]) -> Exception:
 
 
 class BaseJSBridgeEngine:
+    engine_mode = 'js-bridge'
+
     dml_path: Path
     provider: str
     process: subprocess.Popen[str] | None

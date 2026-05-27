@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 import warnings
 from types import TracebackType
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar, Protocol
 from datetime import timedelta
 
 from ._types import TransactionId
 from .errors import TransactionNotStartedError
 from ._builder import dumps
+from .engine.errors import JSBridgeError
 
 if TYPE_CHECKING:
     from ._base_client import SyncBasePrisma, AsyncBasePrisma
@@ -18,6 +19,34 @@ log: logging.Logger = logging.getLogger(__name__)
 
 _SyncPrismaT = TypeVar('_SyncPrismaT', bound='SyncBasePrisma')
 _AsyncPrismaT = TypeVar('_AsyncPrismaT', bound='AsyncBasePrisma')
+
+
+class _TransactionClient(Protocol):
+    _tx_id: TransactionId | None
+
+    @property
+    def _engine(self) -> object: ...
+
+    def is_transaction(self) -> bool: ...
+
+
+def _handle_nested_transaction(client: _TransactionClient, *, stacklevel: int) -> None:
+    if not client.is_transaction():
+        return
+
+    tx_id = client._tx_id
+    if getattr(client._engine, 'engine_mode', None) == 'js-bridge':
+        raise JSBridgeError(
+            code='TRANSACTION_NESTED_UNSUPPORTED',
+            message='Nested interactive transactions are not supported by the JS bridge.',
+            meta={'outerTransactionId': str(tx_id)},
+        )
+
+    warnings.warn(
+        'The current client is already in a transaction. This can lead to surprising behaviour.',
+        UserWarning,
+        stacklevel=stacklevel,
+    )
 
 
 class AsyncTransactionManager(Generic[_AsyncPrismaT]):
@@ -62,14 +91,9 @@ class AsyncTransactionManager(Generic[_AsyncPrismaT]):
 
     async def start(self, *, _from_context: bool = False) -> _AsyncPrismaT:
         """Start the transaction and return the wrapped Prisma instance"""
-        if self.__client.is_transaction():
-            # if we were called from the context manager then the stacklevel
-            # needs to be one higher to warn on the actual offending code
-            warnings.warn(
-                'The current client is already in a transaction. This can lead to surprising behaviour.',
-                UserWarning,
-                stacklevel=3 if _from_context else 2,
-            )
+        # if we were called from the context manager then the stacklevel
+        # needs to be one higher to warn on the actual offending code
+        _handle_nested_transaction(self.__client, stacklevel=3 if _from_context else 2)
 
         tx_id = await self.__client._engine.start_transaction(
             content=dumps(
@@ -164,14 +188,9 @@ class SyncTransactionManager(Generic[_SyncPrismaT]):
 
     def start(self, *, _from_context: bool = False) -> _SyncPrismaT:
         """Start the transaction and return the wrapped Prisma instance"""
-        if self.__client.is_transaction():
-            # if we were called from the context manager then the stacklevel
-            # needs to be one higher to warn on the actual offending code
-            warnings.warn(
-                'The current client is already in a transaction. This can lead to surprising behaviour.',
-                UserWarning,
-                stacklevel=3 if _from_context else 2,
-            )
+        # if we were called from the context manager then the stacklevel
+        # needs to be one higher to warn on the actual offending code
+        _handle_nested_transaction(self.__client, stacklevel=3 if _from_context else 2)
 
         tx_id = self.__client._engine.start_transaction(
             content=dumps(
