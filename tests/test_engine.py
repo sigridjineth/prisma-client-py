@@ -20,6 +20,7 @@ from prisma._types import TransactionId
 from prisma.engine import utils, errors
 from prisma._compat import get_running_loop
 from prisma.binaries import platform
+from prisma._raw_query import deserialize_raw_results
 from prisma.engine.query import QueryEngine
 from prisma._transactions import SyncTransactionManager, AsyncTransactionManager
 from prisma.engine._js_bridge import (
@@ -805,6 +806,46 @@ def test_js_bridge_raw_rows_to_legacy_result() -> None:
         'types': ['bigint', 'datetime'],
         'rows': [['42', '2026-05-26T05:54:00.000Z']],
     }
+
+
+def test_js_bridge_raw_rows_infer_type_from_later_non_null_values() -> None:
+    result = bridge_raw_rows_to_legacy_result(
+        [
+            {
+                'total': None,
+                'created_at': None,
+                'payload': None,
+                'blob': None,
+            },
+            {
+                'total': {'$type': 'Decimal', 'value': '1234567890.123456789'},
+                'created_at': {'$type': 'DateTime', 'value': '2026-05-26T05:54:00.000Z'},
+                'payload': {'$type': 'Json', 'value': {'nested': [1, True, None]}},
+                'blob': {'$type': 'Bytes', 'encoding': 'base64', 'value': 'AQIDBA=='},
+            },
+        ]
+    )
+
+    assert result == {
+        'columns': ['total', 'created_at', 'payload', 'blob'],
+        'types': ['decimal', 'datetime', 'json', 'bytes'],
+        'rows': [
+            [None, None, None, None],
+            [
+                '1234567890.123456789',
+                '2026-05-26T05:54:00.000Z',
+                {'nested': [1, True, None]},
+                'AQIDBA==',
+            ],
+        ],
+    }
+
+    rows = deserialize_raw_results(result)
+    assert rows[0] == {'total': None, 'created_at': None, 'payload': None, 'blob': None}
+    assert rows[1]['total'] == decimal.Decimal('1234567890.123456789')
+    assert rows[1]['created_at'] == datetime(2026, 5, 26, 5, 54, tzinfo=timezone.utc)
+    assert rows[1]['payload'] == {'nested': [1, True, None]}
+    assert rows[1]['blob'] == b'\x01\x02\x03\x04'
 
 
 def test_engine_binary_does_not_exist(monkeypatch: MonkeyPatch) -> None:

@@ -183,9 +183,18 @@ def _raw_value(value: Any) -> Any:
     return deserialize_bridge_value(value)
 
 
+def _infer_raw_column_type(rows: list[dict[str, Any]], column: str) -> str:
+    for row in rows:
+        inferred = _infer_raw_type(row.get(column))
+        if inferred != 'unknown':
+            return inferred
+
+    return 'unknown'
+
+
 def bridge_raw_rows_to_legacy_result(rows: list[dict[str, Any]]) -> dict[str, Any]:
     columns = list(rows[0].keys()) if rows else []
-    types = [_infer_raw_type(rows[0][column]) for column in columns] if rows else []
+    types = [_infer_raw_column_type(rows, column) for column in columns]
     return {
         'columns': columns,
         'types': types,
