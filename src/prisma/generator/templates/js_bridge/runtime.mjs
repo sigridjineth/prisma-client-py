@@ -105,6 +105,25 @@ class BridgeFailure extends Error {
   }
 }
 
+class RollbackSignal extends Error {
+  constructor(transactionId, reason) {
+    super('Rollback requested by Python transaction controller.');
+    this.name = 'RollbackSignal';
+    this.transactionId = transactionId;
+    this.reason = reason ?? null;
+  }
+}
+
+function deferredPromise() {
+  let resolve;
+  let reject;
+  const promise = new Promise((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return {promise, resolve, reject};
+}
+
 function protocolFailure(message, meta = {}) {
   return new BridgeFailure('BRIDGE_PROTOCOL_ERROR', message, {meta});
 }
@@ -339,6 +358,8 @@ class BridgeRuntime {
     this.adapter = null;
     this.connected = false;
     this.inFlight = new Map();
+    this.transactions = new Map();
+    this.nextTransactionId = 0;
     this.clientModule = null;
     this.adapterModule = null;
     this.shuttingDown = false;
@@ -418,7 +439,10 @@ class BridgeRuntime {
     return {status: 'connected'};
   }
 
-  async disconnect() {
+  async disconnect(params = {}) {
+    if (params.rollbackOpenTransactions !== false) {
+      await this.rollbackOpenTransactions('client-disconnect');
+    }
     if (this.client && typeof this.client.$disconnect === 'function') {
       await this.client.$disconnect();
     }
@@ -446,7 +470,7 @@ class BridgeRuntime {
     return {
       status: 'ok',
       databaseReachable,
-      activeTransactions: 0,
+      activeTransactions: this.transactions.size,
     };
   }
 
@@ -458,15 +482,152 @@ class BridgeRuntime {
         record.controller.abort(cancelledFailure(id, 'bridge-shutdown'));
       }
     }
-    await this.disconnect();
+    await this.rollbackOpenTransactions('bridge-shutdown');
+    await this.disconnect({rollbackOpenTransactions: false});
     return {status: 'shutdown'};
+  }
+
+  async startTransaction(params = {}) {
+    const client = await this.ensureClient({});
+    if (typeof client.$transaction !== 'function') {
+      throw new BridgeFailure('TRANSACTION_UNSUPPORTED', 'Generated Prisma Client does not expose $transaction.', {
+        meta: {provider: providerName()},
+      });
+    }
+
+    const transactionId = `tx_${process.pid}_${nowMs()}_${++this.nextTransactionId}`;
+    const ready = deferredPromise();
+    const close = deferredPromise();
+    const options = {};
+    if (Number.isInteger(params.timeoutMs) && params.timeoutMs > 0) {
+      options.timeout = params.timeoutMs;
+    }
+    if (Number.isInteger(params.maxWaitMs) && params.maxWaitMs > 0) {
+      options.maxWait = params.maxWaitMs;
+    }
+    if (params.isolationLevel) {
+      options.isolationLevel = params.isolationLevel;
+    }
+
+    const record = {
+      id: transactionId,
+      state: 'starting',
+      client: null,
+      close,
+      ready: ready.promise,
+      promise: null,
+    };
+    this.transactions.set(transactionId, record);
+
+    record.promise = client.$transaction(async (tx) => {
+      record.client = tx;
+      record.state = 'open';
+      ready.resolve(tx);
+      try {
+        await close.promise;
+        record.state = 'committed';
+        return {status: 'committed'};
+      } catch (error) {
+        if (error instanceof RollbackSignal) {
+          record.state = 'rolled_back';
+          throw error;
+        }
+        record.state = 'failed';
+        throw error;
+      }
+    }, Object.keys(options).length ? options : undefined)
+      .catch((error) => {
+        if (error instanceof RollbackSignal) {
+          return {status: 'rolled_back', reason: error.reason};
+        }
+        throw error;
+      })
+      .finally(() => {
+        this.transactions.delete(transactionId);
+      });
+
+    try {
+      await Promise.race([
+        ready.promise,
+        record.promise.then(() => {
+          throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction closed before it became ready.', {
+            meta: {transactionId},
+          });
+        }),
+      ]);
+    } catch (error) {
+      this.transactions.delete(transactionId);
+      throw mapPrismaError(error, {method: 'transaction.start', transactionId});
+    }
+
+    return {transactionId};
+  }
+
+  async transactionClient(transactionId) {
+    if (typeof transactionId !== 'string' || transactionId.length === 0) {
+      throw protocolFailure('transactionId must be a non-empty string.', {field: 'transactionId'});
+    }
+
+    const record = this.transactions.get(transactionId);
+    if (!record) {
+      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open or has already been closed.', {
+        meta: {transactionId},
+      });
+    }
+
+    await record.ready;
+    if (record.state !== 'open' || !record.client) {
+      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open for queries.', {
+        meta: {transactionId, transactionState: record.state},
+      });
+    }
+    return record.client;
+  }
+
+  async commitTransaction(transactionId) {
+    const record = this.transactions.get(transactionId);
+    if (!record) {
+      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction is not open or has already been closed.', {
+        meta: {transactionId},
+      });
+    }
+
+    await record.ready;
+    record.close.resolve({status: 'committed'});
+    const result = await record.promise;
+    if (result?.status !== 'committed') {
+      throw new BridgeFailure('TRANSACTION_CLOSED', 'Transaction did not commit successfully.', {
+        meta: {transactionId, transactionState: result?.status ?? record.state},
+      });
+    }
+    return {status: 'committed'};
+  }
+
+  async rollbackTransaction(transactionId, params = {}) {
+    const record = this.transactions.get(transactionId);
+    if (!record) {
+      return {status: 'rolled_back', transactionId, alreadyClosed: true};
+    }
+
+    await record.ready;
+    record.close.reject(new RollbackSignal(transactionId, params.reason ?? 'python-rollback'));
+    await record.promise;
+    return {status: 'rolled_back'};
+  }
+
+  async rollbackOpenTransactions(reason) {
+    const rollbacks = [];
+    for (const transactionId of Array.from(this.transactions.keys())) {
+      rollbacks.push(this.rollbackTransaction(transactionId, {reason}));
+    }
+    await Promise.allSettled(rollbacks);
   }
 
   async executeQuery(params, transactionId = null) {
     if (params.kind !== 'model') {
       throw protocolFailure('query.execute only supports kind="model" in this bridge slice.', {kind: params.kind});
     }
-    const client = await this.ensureClient({});
+    const client = transactionId ? await this.transactionClient(transactionId) : await this.ensureClient({});
     const model = lowerFirst(params.model);
     const action = params.action;
     const delegate = client[model];
@@ -484,13 +645,13 @@ class BridgeRuntime {
     }
   }
 
-  async rawQuery(params) {
+  async rawQuery(params, transactionId = null) {
     if (providerName() !== 'postgresql') {
       throw new BridgeFailure('RAW_QUERY_UNSUPPORTED', 'Raw queries are not enabled for this provider in JS bridge mode.', {
         meta: {provider: providerName()},
       });
     }
-    const client = await this.ensureClient({});
+    const client = transactionId ? await this.transactionClient(transactionId) : await this.ensureClient({});
     const parameters = Array.isArray(params.parameters) ? decodeTaggedScalars(params.parameters) : [];
     const sql = params.sql;
     if (typeof sql !== 'string') {
@@ -509,13 +670,13 @@ class BridgeRuntime {
     }
   }
 
-  async batch(params) {
+  async batch(params, transactionId = null) {
     if (!Array.isArray(params.operations)) {
       throw protocolFailure('query.batch operations must be an array.', {field: 'operations'});
     }
-    const client = await this.ensureClient({});
-    const operations = params.operations.map((operation) => this.operationPromise(operation));
-    if (typeof client.$transaction === 'function') {
+    const client = transactionId ? await this.transactionClient(transactionId) : await this.ensureClient({});
+    const operations = params.operations.map((operation) => this.operationPromise(operation, client));
+    if (!transactionId && typeof client.$transaction === 'function') {
       try {
         return encodeSpecialScalars(await client.$transaction(operations, params.isolationLevel ? {isolationLevel: params.isolationLevel} : undefined));
       } catch (error) {
@@ -525,14 +686,13 @@ class BridgeRuntime {
     return encodeSpecialScalars(await Promise.all(operations));
   }
 
-  operationPromise(operation) {
+  operationPromise(operation, client = this.client) {
     if (!isObject(operation)) {
       throw protocolFailure('Batch operation must be an object.');
     }
     if (operation.kind !== 'model') {
       throw protocolFailure('Only model batch operations are supported in this bridge slice.', {kind: operation.kind});
     }
-    const client = this.client;
     const model = lowerFirst(operation.model);
     const action = operation.action;
     const delegate = client?.[model];
@@ -562,7 +722,7 @@ class BridgeRuntime {
       case 'client.connect':
         return await this.connect(request.params);
       case 'client.disconnect':
-        return await this.disconnect();
+        return await this.disconnect(request.params);
       case 'bridge.shutdown':
         return await this.shutdown();
       case 'bridge.cancel':
@@ -570,9 +730,15 @@ class BridgeRuntime {
       case 'query.execute':
         return await this.executeQuery(request.params, request.transactionId ?? null);
       case 'query.raw':
-        return await this.rawQuery(request.params);
+        return await this.rawQuery(request.params, request.transactionId ?? null);
       case 'query.batch':
-        return await this.batch(request.params);
+        return await this.batch(request.params, request.transactionId ?? null);
+      case 'transaction.start':
+        return await this.startTransaction(request.params);
+      case 'transaction.commit':
+        return await this.commitTransaction(request.transactionId);
+      case 'transaction.rollback':
+        return await this.rollbackTransaction(request.transactionId, request.params);
       default:
         throw protocolFailure(`Unknown bridge method: ${request.method}`, {method: request.method});
     }

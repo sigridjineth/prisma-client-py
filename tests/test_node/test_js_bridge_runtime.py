@@ -33,6 +33,11 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
               constructor(options) {
                 this.options = options;
                 this.connected = false;
+                this.transactionOptions = [];
+                this.txUser = {
+                  findMany: async () => [{id: 2n, email: 'tx@example.com'}],
+                  create: async (args) => ({id: 2n, ...args.data}),
+                };
                 this.user = {
                   findMany: async (args) => {
                     if (args && args.delayMs) {
@@ -58,8 +63,19 @@ def fake_bridge_modules(tmp_path: Path) -> dict[str, str]:
               async $queryRawUnsafe(sql, ...params) {
                 return [{ok: true, sql, params}];
               }
-              async $transaction(operations) {
-                return await Promise.all(operations);
+              async $transaction(operationsOrCallback, options) {
+                this.transactionOptions.push(options || null);
+                if (Array.isArray(operationsOrCallback)) {
+                  return await Promise.all(operationsOrCallback);
+                }
+                if (typeof operationsOrCallback === 'function') {
+                  return await operationsOrCallback({
+                    user: this.txUser,
+                    $queryRawUnsafe: async (sql, ...params) => [{tx: true, sql, params}],
+                    $executeRawUnsafe: async () => 1,
+                  });
+                }
+                throw new Error('unsupported transaction input');
               }
             }
             """
@@ -158,6 +174,102 @@ def test_js_bridge_runtime_lifecycle_stdout_protocol_only(fake_bridge_modules: d
         assert proc.wait(timeout=5) == 0
         stderr = proc.stderr.read() if proc.stderr is not None else ''
         assert 'fake client diagnostic on stdout API' in stderr
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_js_bridge_runtime_interactive_transaction_lifecycle(fake_bridge_modules: dict[str, str]) -> None:
+    proc = _spawn_runtime(fake_bridge_modules)
+    try:
+        assert _read_json_line(proc)['method'] == 'bridge.ready'
+
+        _send(
+            proc,
+            {
+                'id': 'req_connect_1',
+                'method': 'client.connect',
+                'params': {'datasource': None, 'logQueries': False, 'adapterOptions': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'connected'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_start_1',
+                'method': 'transaction.start',
+                'params': {'timeoutMs': 5000, 'maxWaitMs': 1000, 'isolationLevel': 'Serializable'},
+                'timeoutMs': 1000,
+            },
+        )
+        tx_start = _read_json_line(proc)
+        tx_id = tx_start['result']['transactionId']
+        assert tx_id.startswith('tx_')
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_query_1',
+                'method': 'query.execute',
+                'transactionId': tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        tx_query = _read_json_line(proc)
+        assert tx_query['result'][0]['email'] == 'tx@example.com'
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_commit_1',
+                'method': 'transaction.commit',
+                'transactionId': tx_id,
+                'params': {},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'committed'}
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_closed_1',
+                'method': 'query.execute',
+                'transactionId': tx_id,
+                'params': {'kind': 'model', 'model': 'User', 'action': 'findMany', 'args': {}},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['error']['code'] == 'TRANSACTION_CLOSED'
+
+        _send(
+            proc,
+            {
+                'id': 'req_tx_start_2',
+                'method': 'transaction.start',
+                'params': {'timeoutMs': 5000, 'maxWaitMs': 1000, 'isolationLevel': None},
+                'timeoutMs': 1000,
+            },
+        )
+        rollback_tx_id = _read_json_line(proc)['result']['transactionId']
+        _send(
+            proc,
+            {
+                'id': 'req_tx_rollback_1',
+                'method': 'transaction.rollback',
+                'transactionId': rollback_tx_id,
+                'params': {'reason': 'test-rollback'},
+                'timeoutMs': 1000,
+            },
+        )
+        assert _read_json_line(proc)['result'] == {'status': 'rolled_back'}
+
+        _send(proc, {'id': 'req_shutdown_1', 'method': 'bridge.shutdown', 'params': {}, 'timeoutMs': 1000})
+        assert _read_json_line(proc)['result'] == {'status': 'shutdown'}
+        assert proc.wait(timeout=5) == 0
     finally:
         if proc.poll() is None:
             proc.kill()
